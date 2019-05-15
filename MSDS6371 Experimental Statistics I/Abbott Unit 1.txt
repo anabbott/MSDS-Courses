@@ -1,0 +1,54 @@
+Andrew Abbott
+Unit 1 live session Questions.
+Group members:
+Nathan Mowat
+John Blevins
+Dennis Murray
+
+
+> log(2)
+[1] 0.6931472
+The default base for the log() function is e.
+
+> log(2, base=2)
+[1] 1
+
+> log(-1)
+[1] NaN
+Warning message:
+In log(-1) : NaNs produced
+The log() has a base of e, which is positive. There is not a number which a positive number can be
+raised to which would produce a negative number.
+
+> ranvect<-c(rnorm(15))
+> ranvect
+ [1] -0.02195232  0.77144839 -0.15610968 -1.63233932  0.60056568 -0.02576740  0.69596600
+ [8]  0.72935876  0.47950612  0.69915959  0.50212898 -0.26435303  0.62559135 -1.97891041
+[15]  0.09793209
+> mean(ranvect)
+[1] 0.07481499
+> sd(ranvect)
+[1] 0.8424472
+> ranvect2<-c(rnorm(15, mean=10, sd=2))
+> ranvect2
+ [1] 12.547360 10.544851  9.206922  9.998839  6.313477  9.549054  8.401771  7.161335
+ [9]  7.444514  7.329239  7.544407  8.601093  8.469856  9.015584  8.310571
+> mean(ranvect2)
+[1] 8.695925
+> sd(ranvect2)
+[1] 1.561291
+The mmeans and standard deviations are not exactly the same as those specified in the function because they are random numbers with small sample sizes. As the number of variables increases, the means and standard deviations will approach thos specified in the function.
+
+> weights<-c(60, 72, 57, 90, 95, 72)
+> heights<-c(1.80, 1.85, 1.72, 1.90, 1.74, 1.91)
+> plot(weights, heights)
+The scatterplot would show a positive relationship between height and weight were it not for the outlying shorter and heavier person. As it is, it is not very conclusive only relying on the scatterplot.
+
+> bmi<-weights/(heights^2)
+> bmi
+[1] 18.51852 21.03725 19.26717 24.93075 31.37799 19.73630
+> mean(weights)
+[1] 74.33333
+> wtdev<-weights-mean(weights)
+> sum(wtdev)
+[1] 2.842171e-14

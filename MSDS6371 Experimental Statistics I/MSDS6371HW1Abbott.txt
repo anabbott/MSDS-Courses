@@ -1,0 +1,36 @@
+MSDS 6371 Unit 1 Homework.
+
+1. 
+Random assignment 1: 
+Treatment	N	Mean	Std Dev	Std Err	Minimum	Maximum
+Extrinsi	23	18.2391	5.1758	1.0792	6.1000	29.7000
+Intrinsi	24	17.4875	5.3812	1.0984	5.0000	26.7000
+Diff (1-2)	 	0.7516	5.2818	1.5412	 	
+
+Random assignment 2:
+Treatment	N	Mean	Std Dev	Std Err	Minimum	Maximum
+Extrinsi	23	17.4000	4.2639	0.8891	6.1000	24.0000
+Intrinsi	24	18.2917	6.0888	1.2429	5.0000	29.7000
+Diff (1-2)	 	-0.8917	5.2761	1.5395	 	
+
+Random assignment 3:
+Treatment	N	Mean	Std Dev	Std Err	Minimum	Maximum
+Extrinsi	23	18.8391	4.5455	0.9478	6.1000	26.7000
+Intrinsi	24	16.9125	5.7629	1.1763	5.0000	29.7000
+Diff (1-2)	 	1.9266	5.2034	1.5183	 	
+
+Random assignment 4:
+Treatment	N	Mean	Std Dev	Std Err	Minimum	Maximum
+Extrinsi	23	17.7174	5.3780	1.1214	5.0000	29.7000
+Intrinsi	24	17.9875	5.2122	1.0639	5.4000	26.7000
+Diff (1-2)	 	-0.2701	5.2939	1.5447	 	    
+
+Random assignment 5:
+Treatment	N	Mean	Std Dev	Std Err	Minimum	Maximum
+Extrinsi	23	18.3609	5.4424	1.1348	6.1000	29.7000
+Intrinsi	24	17.3708	5.1026	1.0416	5.0000	24.3000
+Diff (1-2)	 	0.9900	5.2715	1.5382	 	 
+
+In fact i did not get any difference in means larger than the one actually observed. The largest difference I got was 1.9266.
+
+2.

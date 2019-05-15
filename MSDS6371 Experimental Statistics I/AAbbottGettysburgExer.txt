@@ -1,0 +1,18 @@
+## Andrew Abbott			
+## Gettysburg Address Activity
+## sampling words
+
+1. mean = 4.301
+2. the range appears to be from 1 to 11
+3. sd = .963
+4. the distribution is very slightly right tailed, with a median of 4.008. the density is mostly between 2 and 7.
+5.	a. mean = 4.252
+	sd = 0.636
+	b. mean = 4.283
+	sd = 0.473
+	c. mean = 4.293
+	sd = 0.268
+6.	
+	a. The population distribution is slightly right tailed, the distribution of the means of 500 samples of size 10 is symmetric about its mean.  
+	b. The population distribution is slightly right tailed, the distribution of the means of 500 samples of size 20 is slightly tilted the other way but near symmetric. 
+	c. The population distribution is slightly right tailed, the distribution of the means of 500 samples of size 50 is more symmetric about its mean.   
