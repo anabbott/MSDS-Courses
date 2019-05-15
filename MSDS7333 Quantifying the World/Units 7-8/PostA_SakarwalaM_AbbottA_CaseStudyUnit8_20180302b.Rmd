@@ -1,0 +1,1056 @@
+---
+title: "MSDS 7333 QTW - Unit8CaseStudy"
+author: "Armand Post, Mustafa Sakarwala, Andrew Abbott"
+date: "March 04, 2018"
+output:
+  word_document: default
+  html_document: default
+---
+
+<style type="text/css">
+body, td {
+   font-size: 12px;
+}
+code.r{
+  font-size: 20px;
+}
+pre {
+  font-size: 8px
+}
+</style>
+
+```{r setup, include=FALSE, echo=FALSE, eval=TRUE}
+#knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(gdata)
+```
+
+```{r ShowInstalledPackages1, include=FALSE, echo=FALSE, eval=TRUE}
+installed.packages() 
+sessionInfo()
+```
+
+## Abstract:
+In this case study, we are using race results for the Cherry Blossom Ten Mile Run from 1999 to 2012 to study how runners physical performance changes with age. The focus of this study involves web scraping for free and publicly published data and then getting the data cleaned into the correct format. In order to investigate how age distributions change over the years, age distribution for all runners across 14 years is compared; however, what information is recorded and how the data is formatted changes each year so close attention is paid first to formatting the data. In order for most data analysis to be viable, the data set in question usually must be cleaned and formatted. This point is especially clear in this case where web scraped data that generally comes in the form of raw character strings. The data variables were systematically extracted from the raw text files in an iterative process as new issues presented themselves. Once cleaned, the data is combined into a dataframe that can easily be used in further analysis. The R language is leveraged to appropriately format the data via statistical analysis and examining summary statistics and plots. Following data acquisition and successfully reading tables of race results into R, results are analyzed and compared using density curves, quantile-quantile plots, and boxplots. In this way, we are able to visualize the data for tens of thousands of observations to explore the performance-age relationship and ultimately examine age distribution. Furthermore, we peformed simple linear, LOESS, and piecewise regressions to more deeply explore the relationship between age and running time.
+
+## Introduction:
+Data cleaning is a very important step in the data science process. In the modern age of big data, it is very rare to find a dataset that is in a state that is conducive to effective analysis without any pre-work. It is not uncommon for a raw data set to have missing values, formatting errors, disparate layouts, and a host of other issues that need to be dealt with. Web scraping can introduce even more issues that need to be cleaned before a data set can be worked with. When scraping data from a website, it is not necessarily returned in an easy to work with format such as a table or JSON array. The data could simply be a large string of characters. 
+
+This case study was undertaken in order to explore and relationship between a person’s age and physical performance as a runner. Data used comes from the popular Credit Union Cherry Blossom race. The Cherry Blossom Ten Mile Run is held every year during the month of April in Washington, D.C., when cherry blossom trees are said to bloom. Race results for the Cherry Blossom Ten Mile Run are available to the public online at http://www.cherryblossom.org/ and currently include annual results spanning from 1999 to 2017 (19 years in total). However for our exercise, we will focus on 1999 to 2012 since the results for those years is stored in formats that are easy to scrape with R. The race began in 1973 and has since grown by tens of thousands of runners to 17,000 entries in 2012 with ages ranging from 9 to 89. In fact, the race has been in such high demand that runners are chosen via a lottery system to enter the race. Because of the enormous amount of observations there is a clear abundance of information that can be used as a resource for investigating the performance-age relationship.
+
+In Chapter 2 of Data Science in R: A Case Studies Approach to Computational Reasoning and Problem Solving” (Nolan and Lang) the men's Cherry Blossom Race results for these same years is cleaned. The objective of this case study is to answer Question 2.10 in that chapter. 
+
+To that end, while this information is free and available to the public, what information is reported and how the data is formatted changes each year, presenting a challenge that must first be overcome before conducting further analysis. After data cleanup is performed and race results data tables are read into R, we then turn our focus to the age distribution of runners across all 14 years of the races, we noticed that the 1999 runners were typically older than the 2012 runners. This is achieved by creating visual representations of the data through density curves, quantile-quantile plots, and boxplots. These visualizations are important for gaining deeper insights by seeing how fast or gradual changes are over time, as well as any outliers or subtle trends. As mentioned before, a number of regressions are then run to do a deeper dive into the relationship between age and run times.
+
+## Literature Review
+To better understand web scraping, we searched for academic papers on the topic. An entry in the Journal of Statistical Software was found where a student from the Univeristy of Milan reviewed a book on web scraping entitled *Automated Data Collection with R – A Practical Guide to Web Scraping and Text Mining*. The review of the book reveals how deep the topic of web scraping can be. The book is 400 pages spanning 14 chapters. While the 2nd half of the book is focused on advanced topics such as scripting, batch processing, and statistical analysis, the first half of the book has plenty of material to cover. When scraping data from the web, one can benefit from having a breadth of knowledge including XML, JSON, APIs, HTTP, Javascript, Ajax, and also SQL to store data once retrieved. The author Iacus, further describes how workflows can break down over time due to changes in APIs. Based on the author's review, we drew the conclusion that web scraping is a very dynamic, deep field that requires a significant investment to master.
+
+After web scraping was addressed, we sought academic literature regarding how performance as a runner changes with age. German researchers from the University of Cologne and the Central Institute of the Federal Armed forces assessed run times for 300,757 runners. The results of their analysis was surprising. They found little evidenced of age related losses in running performance from ages 20 to 49. After the age of 50, age related performance deterioration was found, but only in the range of 2.6% to 4.4% per decade. This indicated that older athletes are able to maintain a high degree of physical plasticity. The German researchers conclusions were that performance of marathon and half marathon runners at the amateur level is more influenced by lifestyle choices. According to the www.theactivetimes.com [5], peak performance for swimmers and sprinters are at age 21 and 26 respectively. However for distance runners where endurance is more important, peak performance age increases along with distances.  For marathons (26 mile run), men peak at age 29 while women peak at 30. For Iron Mans (2.4 mile swim, 112 mile bikeride, and 26 mile run within 24 hours), mean peak at 31 while women peak at age 36. The peak ages get more interesting when assesssing Ultra Events such as Triple Iron Mans (three full Iron Mans within 3 days) and Deca Iron Mans (10 full Iron Mans within 10 days). The average age of a Triple Iron Man finisher is 38 while a Deca Iron Man is an astonishing 41 years old! While the average 20 year old should be able to beat an average 50+ year old in a foot race, the younger competitor would be in for a surprise if going up against an older runner who has conditioned themselves, avoided injury, and made good lifestyle decisions over a number of decades.
+
+First we experiment with accessing the 2012 men's results. The first three lines are viewed and we can see that we have successfully imported the data.
+
+```{r Explore, include=TRUE, echo=FALSE}
+library(XML)
+ubase = "http://www.cherryblossom.org/"
+url = paste(ubase, "results/2012/2012cucb10m-m.htm", sep = "")
+doc = htmlParse(url)
+
+preNode = getNodeSet(doc, "//pre")
+ 
+txt = xmlValue(preNode[[1]])
+els = strsplit(txt, "\\r\\n")[[1]]
+els[1:3]
+```
+
+Next we attempted to create a function to scrape data for all 14 years we are interested in assessing. The function is shown below.
+
+```{r ExtractResTable1, include=FALSE, echo=FALSE}
+extractResTable1 =
+       # Retrieve data from web site, find preformatted text,
+       # return as a character vector.
+function(url)
+{
+  doc = htmlParse(url)
+  preNode = getNodeSet(doc, "//pre")
+  txt = xmlValue(preNode[[1]])
+  els = strsplit(txt, "\r\n")[[1]]   
+  
+  return(els)
+}
+```
+
+Let's test our extraction function on the 2012 data.
+
+```{r, include=TRUE, echo=FALSE}
+men2012 <- extractResTable1("http://cherryblossom.org/results/2012/2012cucb10m-m.htm")
+men2012[1:13]
+```
+
+The function works! Next we created a list of all of the URls for the male racers.
+
+```{r WebScrapeMen, include=TRUE, echo=FALSE}
+ubase = "http://www.cherryblossom.org/"
+menURLs = c(paste(ubase, "results/", 1999, "/", "cb99m.html", sep = ""),
+            paste(ubase, "results/", 2000, "/", "Cb003m.htm", sep = ""),
+            paste(ubase, "results/", 2001, "/", "oof_m.html", sep = ""),
+            paste(ubase, "results/", 2002, "/", "oofm.htm", sep = ""),
+            paste(ubase, "results/", 2003, "/", "CB03-M.HTM", sep = ""),
+            paste(ubase, "results/", 2004, "/", "men.htm", sep = ""),
+            paste(ubase, "results/", 2005, "/", "CB05-M.htm", sep = ""),
+            paste(ubase, "results/", 2006, "/", "men.htm", sep = ""),
+            paste(ubase, "results/", 2007, "/", "men.htm", sep = ""),
+            paste(ubase, "results/", 2008, "/", "men.htm", sep = ""),
+            paste(ubase, "results/", 2009, "/", "09cucb-M.htm", sep = ""),
+            paste(ubase, "results/", 2010, "/", "2010cucb10m-m.htm", sep = ""),
+            paste(ubase, "results/", 2011, "/", "2011cucb10m-m.htm", sep = ""),
+            paste(ubase, "results/", 2012, "/", "2012cucb10m-m.htm", sep = ""))
+menURLs
+```
+
+Likewise, a list was created for the women.
+
+```{r WebScrapeWomen, include=TRUE, echo=FALSE}
+ubase = "http://www.cherryblossom.org/"
+womenURLs = c(paste(ubase, "results/", 1999, "/", "cb99f.html", sep = ""),
+            paste(ubase, "results/", 2000, "/", "Cb003f.htm", sep = ""),
+            paste(ubase, "results/", 2001, "/", "oof_f.html", sep = ""),
+            paste(ubase, "results/", 2002, "/", "ooff.htm", sep = ""),
+            paste(ubase, "results/", 2003, "/", "CB03-F.HTM", sep = ""),
+            paste(ubase, "results/", 2004, "/", "women.htm", sep = ""),
+            paste(ubase, "results/", 2005, "/", "CB05-F.htm", sep = ""),
+            paste(ubase, "results/", 2006, "/", "women.htm", sep = ""),
+            paste(ubase, "results/", 2007, "/", "women.htm", sep = ""),
+            paste(ubase, "results/", 2008, "/", "women.htm", sep = ""),
+            paste(ubase, "results/", 2009, "/", "09cucb-F.htm", sep = ""),
+            paste(ubase, "results/", 2010, "/", "2010cucb10m-f.htm", sep = ""),
+            paste(ubase, "results/", 2011, "/", "2011cucb10m-f.htm", sep = ""),
+            paste(ubase, "results/", 2012, "/", "2012cucb10m-f.htm", sep = ""))
+womenURLs
+```
+
+Next we created tables for every year, we looked at the lengths for the men tables.  The years 1999, 2000, and 1999 have lengths of one. The extractResTable function didn't work properly for all years. We'll need another approach for those that didn't pull in correctly.
+
+```{r ShowMenRecords1, include=TRUE, echo=FALSE}
+menTables = lapply(menURLs, extractResTable1)
+names(menTables) = 1999:2012
+print("Mens Record Numbers by Year")
+sapply(menTables, length)
+```
+
+A new function is created with a different methodlogy for the year 2000. The new function is applied and we again assess the number of records in each dataset. The year 2000 appears to have been correctly pulled in this time.
+
+```{r ExtractResTable2, include=FALSE, echo=FALSE}
+extractResTable2 =
+  # Retrieve data from web site, 
+  # find the preformatted text,
+  # and return as a character vector.
+function(url, year = 1999)
+{
+  doc = htmlParse(url)
+
+  if (year == 2000) {
+    # Get text from 4th font element
+    # File is ill-formed so <pre> search doesn't work.
+    ff = getNodeSet(doc, "//font")
+    txt = xmlValue(ff[[4]])
+  }
+  else {
+    preNode = getNodeSet(doc, "//pre")
+    txt = xmlValue(preNode[[1]])
+  } 
+  
+  els = strsplit(txt, "\r\n")[[1]]
+  return(els)
+}
+```
+
+```{r ShowMenRecords2, include=TRUE, echo=FALSE}
+years = 1999:2012
+menTables = mapply(extractResTable2, url = menURLs, year = years)
+names(menTables) = years
+print("Mens Record Numbers by Year")
+sapply(menTables, length)
+```
+
+At this point, we have all years pulling correctly except 1999 and 2009.
+The function is further refined to correctly pull the 2009 data.
+
+```{r ExtractResTable3, include=TRUE, echo=FALSE}
+extractResTable3 =
+  #
+  # Retrieve data from web site, 
+  # find the preformatted text,
+  # and write lines or return as a character vector.
+  #
+  function(url = "http://www.cherryblossom.org/results/2009/09cucb-F.htm", year = 1999, sex = "male", file = NULL)
+  {
+    doc = htmlParse(url)
+
+    if (year == 2000) {
+      # Get preformatted text from 4th font element
+      # The top file is ill formed so the <pre> search doesn't work.
+      ff = getNodeSet(doc, "//font")
+      txt = xmlValue(ff[[4]])
+      els = strsplit(txt, "\r\n")[[1]]
+    }
+    else if (year == 2009 & sex == "male") {
+      # Get preformatted text from <div class="Section1"> element
+      # Each line of results is in a <pre> element
+      div1 = getNodeSet(doc, "//div[@class='Section1']")
+      pres = getNodeSet(div1[[1]], "//pre")
+      els = sapply(pres, xmlValue)
+    }
+    else {
+      # Get preformatted text from <pre> elements
+      pres = getNodeSet(doc, "//pre")
+      txt = xmlValue(pres[[1]])
+      els = strsplit(txt, "\r\n")[[1]]   
+    } 
+    
+    if (is.null(file)) return(els)
+    # Write the lines as a text file.
+    writeLines(els, con = file)
+  }
+```
+
+```{r ShowMenRecords3, include=TRUE, echo=FALSE}
+years = 1999:2012
+menTables = mapply(extractResTable3, url = menURLs, year = years)
+names(menTables) = years
+print("Mens Record Numbers by Year")
+sapply(menTables, length)
+```
+
+Now, every year is pulling correctly, except for 1999.
+After some searching on the web, the following approach was found at the github repo listed below. We test to see if it still works.
+
+https://github.com/bthomasbailey/cherry-blossom-run/blob/master/scrapeWeb.R
+
+```{r extractSingleItem, include=TRUE, echo=FALSE}
+extractSingleItem <- function(strLine, pattern){
+    itemVal <- str_match(strLine, pattern)[1, 1]
+    len <- nchar(itemVal)
+    
+    if (!is.na(itemVal)) {
+        loc <- regexpr(itemVal, strLine)
+        newStrLine <- substr(strLine, start = loc + len, stop = nchar(strLine))   
+    } else {
+        newStrLine <- strLine
+    }
+    
+    return (c(itemVal, newStrLine))
+}
+```
+
+```{r parseLine, include=TRUE, echo=FALSE}
+parseLine <- function(strLine){
+    
+    placeOut <- extractSingleItem(strLine, "\\d+")
+    place <- str_trim(placeOut[1])
+    newStrLine <- placeOut[2]
+    
+    divTotOut <- extractSingleItem(newStrLine, "\\d+/\\d+")
+    divTot <- str_trim(divTotOut[1])
+    newStrLine <- divTotOut[2]
+    
+    numOut <- extractSingleItem(newStrLine, "\\d+")
+    num <- str_trim(numOut[1])
+    newStrLine <- numOut[2]
+    
+    nameOut <- extractSingleItem(newStrLine, "[A-Za-z\\-\\'\\.\\s]+")
+    name <- str_trim(nameOut[1])
+    newStrLine <- nameOut[2]
+    
+    agOut <- extractSingleItem(newStrLine, "\\d+")
+    ag <- str_trim(agOut[1])
+    newStrLine <- agOut[2]
+    
+    homeTownOut <- extractSingleItem(newStrLine, "([A-Za-z]+[\\s]*)+")
+    homeTown <- str_trim(homeTownOut[1])
+    newStrLine <- homeTownOut[2]
+    
+    times <- str_match_all(newStrLine, "\\d+[\\:]{1}\\d+([\\:]{1}\\d+)?[#|*]*")[[1]]
+    gunTime <- str_trim(times[1, 1])
+    netTime <- str_trim(times[2, 1])
+    pace <- str_trim(times[3, 1])
+    
+    return (c(place, divTot, num, name, ag, homeTown, gunTime, netTime, pace))
+}
+```
+
+```{r extractResTable4, include=TRUE, echo=FALSE}
+extractResTable4 <- function(url, year = 1999, men = T, file = NULL) {
+    #Retrieve data from web site, find preformatted text, return as chr vector
+    
+    require(XML)
+    require(gdata)
+    require(stringr)
+    
+    doc <- htmlParse(url)
+    
+    if (year == 2000) {
+      
+#Get text from 4th font element
+#File is ill-formed so <pre> search doesn't work.
+      
+        ff <- getNodeSet(doc, "//font")
+        txt <- xmlValue(ff[[4]])
+        els <- strsplit(txt, "\r\n")[[1]]
+    } else if (year == 2009 & men == T) {
+#The html for this is nooooo fun
+        dp <- getNodeSet(doc, "//div//pre")
+        nodeVals <- lapply(dp, xmlValue)
+        
+        eqIndex <- grep("^===", nodeVals)
+        
+        spacerRow <- nodeVals[eqIndex][[1]]
+        vecSpacerRow <- str_split(str_trim(spacerRow), "[\\s|Â]+")[[1]]
+        
+#Need to adjust Gun Time and Net Time columns b/c they are too short for some of their values
+        
+        vecSpacerRow[7] <- paste(vecSpacerRow[7],"=", sep = "")
+        vecSpacerRow[8] <- paste(vecSpacerRow[8],"=", sep = "")
+        
+#manually type in headers; I know this isn't ideal, but code is only useful for Men's 2009 results anyway
+        
+        vecHeaderRow <- c("Place", "Div/Tot", "Num", "Name", "Ag", "Hometown", "Gun Tim", "Net Tim", "Pace")
+        
+        bodyNodeVals <- nodeVals[(eqIndex + 1):(length(nodeVals) - 2)]
+        
+        colLens <- sapply(vecSpacerRow, nchar, USE.NAMES = F)
+        bodyMat <- t(sapply(bodyNodeVals, parseLine))
+        
+        preHeadNodeVals <- nodeVals[(1):(eqIndex - 2)]
+        vecPreHeadText <- sapply(preHeadNodeVals, gsub, pattern = "Â", replacement = " ")
+        vecPreHeadText <- sapply(vecPreHeadText, str_trim)
+        
+        footerNodeVals <- nodeVals[(length(nodeVals) - 1):(length(nodeVals))]
+        vecFooterText <- sapply(footerNodeVals, gsub, pattern = "Â", replacement = " ")
+        #footerMat <- t(sapply(vecFooterText, function(x) c(x, rep(" ", 8)), USE.NAMES = F))
+        
+        dataMat <- rbind(vecHeaderRow, vecSpacerRow, bodyMat, deparse.level = 0)
+        
+#write to Txt file
+        
+        lapply(vecPreHeadText, write, "temp2009.txt", append = T)
+        write.fwf(dataMat, file = "temp2009.txt", width = colLens, colnames = F, append = T)
+        lapply(vecFooterText, write, "temp2009.txt", append = T)
+        
+#convert contents of txt file to chr vector
+        
+        els <- readLines("temp2009.txt")
+        file.remove("temp2009.txt")
+    }
+    else {
+        preNode <- getNodeSet(doc, "//pre")
+        txt <- xmlValue(preNode[[1]])
+        els <- strsplit(txt, "\r\n")[[1]]
+    }
+    
+    if (men == T) {
+        subDir <- "data/MenTxt"
+    } else {
+        subDir <- "data/WomenTxt"
+    }
+    
+    if (!(is.null(file))) {
+        if(!(dir.exists(subDir))) {dir.create(subDir)} 
+        writeLines(els, file.path(subDir, file))
+    }
+    
+    return(els)
+}
+```
+
+```{r ShowMenRecords4, include=TRUE, echo=FALSE}
+years = 1999:2012
+menTables = mapply(extractResTable4, url = menURLs, year = years, men = T, file = paste(years,".txt", sep=""))
+names(menTables) = years
+print("Mens Record Numbers by Year")
+sapply(menTables, length)
+```
+
+The code works, but still has issues with 1999. Next we tested on the women's records.
+
+```{r ShowWomenRecords4, include=TRUE, echo=FALSE}
+years = 1999:2012
+womenTables = mapply(extractResTable4, url = womenURLs, year = years, men = F, file = paste(years,".txt", sep=""))
+names(womenTables) = years
+print("Womens Record Numbers by Year")
+sapply(womenTables, length)
+```
+
+We have the same issues as with the men. All years appear to have pulled correctly, except for 1999. We proceeded to save our tables to local machines and then read them back in to see if that might help with 1999 reading as one long text string.
+
+To begin converting to dataframes, we save all of the data in .rda files.
+
+```{r SaveData, include=FALSE, echo=FALSE}
+save(menTables, file = "data/CBMenTextTables.rda")
+save(womenTables, file = "data/CBWomenTextTables.rda")
+```
+
+Next we create some helper functions to read back in the text files we saved previously.
+
+```{r FindColLocs, include=FALSE, echo=FALSE}
+findColLocs <- function(spacerRow) {
+    
+    spaceLocs <- gregexpr(" ", spacerRow)[[1]]
+    rowLength <- nchar(spacerRow)
+    
+    if (substring(spacerRow, rowLength, rowLength) != " ") {
+        return (c(0, spaceLocs, rowLength + 1))
+    } else {
+        return (c(0, spaceLocs))
+    }
+}
+```
+
+```{r SelectCols, include=FALSE, echo=FALSE}
+selectCols <- function(colNames, headerRow, searchLocs) {
+    sapply(colNames,
+           function(name, headerRow, searchLocs) {
+               startPos <- regexpr(name, headerRow)[[1]]
+               if (startPos == -1) {
+                   return(c(NA, NA))
+               }
+               
+               index <- sum(startPos >= searchLocs)
+               c(searchLocs[index] + 1, searchLocs[index + 1])
+           },
+           headerRow = headerRow, searchLocs = searchLocs)
+    
+}
+```
+
+```{r ExtractVariables, include=FALSE, echo=FALSE}
+extractVariables <- function(file, varNames = c("name", "home", "ag", "gun", "net", "time"),
+                             sex, year) {
+    
+#Find the index of the footer row
+  
+    footIndex <- grep("^[[:blank:]]*[#|*]", file)
+    
+#Find the index of rows that are completely blank
+    
+    blankIndex <- grep("^[[:blank:]]*$", file)
+    
+    if(sex == "W" & year == 2001){
+        #women's file for 2001 does not contain spacer or header rows
+        body <- file[-c(footIndex, blankIndex)]
+        locCols<-matrix(c(13, 34, 38, 56, 35, 37, 65, 72, 57, 64, NA, NA), nrow = 2)
+        colnames(locCols) <- varNames
+        
+    } else {
+      
+#Find the index of the row with equal signs
+      
+        eqIndex <- grep("^===", file)    
+        
+#Extract the two key rows and the data (fix men 2006 spacer row)
+        
+        spacerRow <- file[eqIndex]
+        headerRow <- tolower(file[eqIndex - 1])
+        
+        if (year == 2006){
+            locNetTime <- regexpr("net", headerRow)
+            spacerRow <- paste(substr(spacerRow, 1, locNetTime - 2), 
+                               substr(spacerRow, locNetTime, nchar(spacerRow)), "")
+        }
+        
+                body <- file[-c(1:eqIndex, footIndex, blankIndex)]
+        
+#Obtain the starting and ending positions of variables
+                
+        searchLocs <- findColLocs(spacerRow)
+        locCols <- selectCols(varNames, headerRow, searchLocs)
+    }
+    
+    Values <- mapply(substr, list(body), start = locCols[1,], stop = locCols[2,])
+    colnames(Values) <- varNames
+    
+    invisible(Values)
+}
+```
+
+After the helper functions are created, the text files are read into the R session.
+
+```{r ReadTextFiles, include=FALSE, echo=FALSE}
+mfilenames <- paste("../Code/data/MenTxt/", 1999:2012, ".txt", sep="")
+menFiles <- lapply(mfilenames, readLines)
+names(menFiles) <- 1999:2012
+
+wfilenames <- paste("../Code/data/WomenTxt/", 1999:2012, ".txt", sep="")
+womenFiles <- lapply(wfilenames, readLines)
+names(womenFiles) <- 1999:2012
+```
+
+The text files were correctly read in, so the next step is to apply our function to extract the variables. Notice here that we include a new column that represents the gender of the racer so that later we can combine dataframes to compare the numbers for the men and women.
+
+```{r ApplyExtractVariables, include=FALSE, echo=FALSE}
+menResMat <- mapply(extractVariables, menFiles, sex = "M", year = 1999:2012)
+womenResMat <- mapply(extractVariables, womenFiles, sex = "W", year = 1999:2012)
+```
+
+Let's check the number of records again.
+
+```{r ShowAllRecords, include=TRUE, echo=FALSE}
+print("Mens Record Numbers by Year")
+sapply(menResMat, nrow)
+print("Womens Record Numbers by Year")
+sapply(womenResMat, nrow)
+```
+
+Finally our datasets are set up correctly! The 1999 data no longer reads as one string. We can now proceed with analyzing the data.
+
+```{r CheckAgesMen, warning=FALSE, include=TRUE, echo=FALSE}
+age <- as.numeric(menResMat$`2012`[, "ag"])
+age <- sapply(menResMat, function(x) as.numeric(x[ , "ag"]))
+boxplot(age, ylab = "Age", xlab = "Year")
+```
+
+Over time, we see the mean age of male racers decreases. Note that despite the mean age decreasing, the oldest participants increase gradually. We notice in 2001 to 2003, that a few unusually small ages appear for men.
+
+```{r BlankAgesMen, include=TRUE, echo=FALSE}
+print("Missing Age Values for Male Racers by Year")
+sapply(age, function(x) sum(is.na(x)))
+```
+
+When we evaluate for missing values, we find a very small proportion of missing records exist. We'll flag those that are missing with an index to potentially correct later.
+Next we assessed the run times for the men. All of the values look reasonable so we can be confident no outliers exist on the times for men.
+
+```{r RunTimesMen, include=TRUE, echo=FALSE}
+charTime <- menResMat[["2012"]][, "time"]
+timePieces <- strsplit(charTime, ":")
+#timePieces[[1]]
+#tail(timePieces, 1)
+
+timePieces <- sapply(timePieces, as.numeric)
+runTime <- sapply(timePieces,
+                  function(x){
+                      if (length(x) == 2) x[1] + x[2]/60
+                      else 60*x[1] + x[2] + x[3]/60
+                  })
+print("Men's run time summary statistics")
+summary(runTime)
+```
+
+```{r CheckAgesWomen, warnings=FALSE, include=TRUE, echo=FALSE}
+#Women
+age <- as.numeric(womenResMat$`2012`[, "ag"])
+age <- sapply(womenResMat, function(x) as.numeric(x[ , "ag"]))
+boxplot(age, ylab = "Age", xlab = "Year")
+```
+
+We assessed the ages for women and notice a similar trend as the men had. Over time the mean age of female racers decreases. Unlike the men however, the oldest racers peaked around 2005 for the women then dropped siginificantly. There appears to be one potential age outlier for the female racers in 2001.
+
+```{r BlankAgesWomen, include=TRUE, echo=FALSE}
+print("Missing Age Values for female Racers by Year")
+sapply(age, function(x) sum(is.na(x)))
+```
+
+Similar to the men, a relatively small number of missing values exist for the women. Like the men, many of them exist in 2005. Next we'll view all of the dubious ages for women in one code chunk.  We see that most of the bad values are missing.  There is one zero age record in 2001. An allegedly seven year old racer participated in 2009, but that is likely a legitimate record. Overall, the missing values are extremely low and won't affect the remainder of the analysis, so we choose to ignore them.
+
+
+
+Next we assessed the run times for the women. All of the values look reasonable so we can be confident no significant outliers exist on the times for women.
+
+```{r RunTimesWoen, include=TRUE, echo=FALSE}
+charTime <- womenResMat[["2012"]][, "time"]
+timePieces <- strsplit(charTime, ":")
+#timePieces[[1]]
+#tail(timePieces, 1)
+
+timePieces <- sapply(timePieces, as.numeric)
+runTime <- sapply(timePieces,
+                  function(x){
+                      if (length(x) == 2) x[1] + x[2]/60
+                      else 60*x[1] + x[2] + x[3]/60
+                  })
+print("Women's run time summary statistics")
+summary(runTime)
+```
+
+Next we created a function to convert the times into a more usable format.
+
+```{r ConvertTime, include=FALSE, echo=FALSE}
+
+convertTime <- function(charTime){
+  
+#takes time in h:mm:ss format and converts it to minutes
+#if time is invalid, it forces it to NA
+    
+    timePieces <- strsplit(charTime, ":")
+    timePieces <- sapply(timePieces, as.numeric)
+    
+#Fix to account for times that are of incorrect format, e.g. "1:30:"
+    
+    nbrColons <- lapply(charTime, 
+                       function(x) {
+                         length(gregexpr(":", x)[[1]])
+                       })
+    
+    runTime <- mapply(function(x, y, z){
+                  nbrTimePieces <- length(x)
+                  if (nbrTimePieces <= y) {
+                      return(NA)}
+                  else if (nbrTimePieces == 2) {
+                      return(x[1] + x[2]/60)}
+                  else {
+                      return(60*x[1] + x[2] + x[3]/60)}
+               }, 
+               timePieces, 
+               nbrColons,
+               charTime)
+}
+```
+
+To make the datasets more functional, we created a function to convert the tables from the matrices into dataframes. Any values without run times will be dropped. After the function is created, it is run on the tables for both men and women. We notice one record from 2001 men's results being dropped that had no run time.
+
+```{r CreateDF, include=FALSE, echo=FALSE}
+createDF <- function(Res, year, sex){
+  
+#Determine which time to use
+  
+    useTime <- if(!is.na(Res[1, "net"])) {
+        Res[, "net"]
+    } else if(!is.na(Res[1, "gun"])) {
+        Res[, "gun"]
+    } else {
+        Res[, "time"]}
+    
+#Remove # and * and blanks from time
+    
+    useTime <- gsub("[#\\*[:blank:]]", "", useTime)
+    
+#Drop rows with no time
+    
+    Res <- Res[useTime != "", ]
+    runTime <- convertTime(useTime[useTime != ""])
+    
+#convertTime returns NA for invalid run times; drop these records and print message about record(s) dropped
+    
+    if(sum(is.na(runTime)) > 0){
+      print(paste("Dropping the following records in year", year, "for", 
+                  ifelse(sex == "M", "Men", "Women"), 
+                  "due to invalid times", sep = " "))
+      
+      print(Res[is.na(runTime), ])     
+    }
+    Results <- data.frame(year = rep(year, nrow(Res)),
+                          sex = rep(sex, nrow(Res)),
+                          name = Res[ , "name"],
+                          home = Res[ , "home"],
+                          age = as.numeric(Res[ , "ag"]), 
+                          runTime = runTime,
+                          stringsAsFactors = F)
+    invisible(Results)
+}
+```
+
+```{r RunCreateDF, warnings=FALSE, include=TRUE, echo=FALSE}
+menDF <- mapply(createDF, menResMat, year = 1999:2012, sex = "M", SIMPLIFY = F)
+womenDF <- mapply(createDF, womenResMat, year = 1999:2012, sex = "W", SIMPLIFY = F)
+```
+
+Let's check how many variables are missing. After converting to a dataframe, we notice that the missing ages are identical to the matrix tables. This gives us confidence that the conversion to dataframes was successful.
+
+```{r CheckAgeNA, include=TRUE, echo=FALSE}
+#check NA values for ages
+print("men's missing ages")
+sapply(menDF, function(x) sum(is.na(x$age)))
+
+print("women's missing ages")
+sapply(womenDF, function(x) sum(is.na(x$age)))
+```
+
+Next we ran a check to see how many hometown values are missing. We show no records for men or women. This is a good sign, but it's possible the hometowns are stored as some type of text string even when missing and don't convert into NAs. We'll keep this in mind for later in the analysis.
+
+```{r CheckHometownNA, include=TRUE, echo=FALSE}
+#check NA values for hometowns
+print("men's missing hometowns")
+sapply(menDF, function(x) sum(is.na(x$home)))
+
+print("women's missing hometowns")
+sapply(womenDF, function(x) sum(is.na(x$home)))
+```
+
+When checking for missing run times, we notice only one potentially missing value that the function to convert to dataframe may have missed.
+
+```{r CheckRunTimeNA, include=TRUE, echo=FALSE}
+#check NA values for runTime
+print("men's missing run times")
+sapply(menDF, function(x) sum(is.na(x$runTime)))
+
+print("women's missing run times")
+sapply(womenDF, function(x) sum(is.na(x$runTime)))
+```
+
+Next we store our dataframes for men and women into cbMen and cbWomen respectively.
+
+```{r CBMenrda, include=TRUE, echo=FALSE}
+cbMen = do.call(rbind, menDF)
+save(cbMen, file = "../Code/data/cbMen.rda")
+
+dim(cbMen)
+
+load("../Code/data/cbMen.rda")
+```
+
+```{r CBWomenrda, include=TRUE, echo=FALSE}
+cbWomen = do.call(rbind, womenDF)
+save(cbWomen, file = "../Code/data/cbWomen.rda")
+dim(cbWomen)
+
+load("../Code/data/cbWomen.rda")
+```
+
+By calling head(menDF), we can take a look at our dataframes. We notice that all of the tables have uniform headers and the run times have converted correctly.
+
+```{r HeadDFs, include=FALSE, echo=FALSE}
+menDF[1] %>%
+  head()
+```
+
+We again run some boxplots for the men's age on the dataframes. The results look identical to the matrices.
+
+```{r CheckAgesMen2, include=TRUE, echo=FALSE}
+
+age <- as.numeric(menDF$`2012`[, "age"])
+age <- sapply(menDF, function(x) as.numeric(x[ , "age"]))
+boxplot(age, main = "Boxplots of men's age by year", ylab = "Age", xlab = "Year")
+```
+
+We assess some boxplots for the men's run times by year. We observe that the times increased gradually until around 2005, after which the times leveled off.
+
+```{r CheckTimesMen, include=TRUE, echo=FALSE}
+
+times <- as.numeric(menDF$`2012`[, "runTime"])
+times <- sapply(menDF, function(x) as.numeric(x[ , "runTime"]))
+boxplot(times, main = "Boxplots of men's run times by year", ylab = "Run Time", xlab = "Year")
+```
+
+We look at the women's ages by year in the dataframes and again notice it's identical to the tables in the matrices. This gives us further validation that the data hasn't undergone any significant changes during conversions.
+```{r CheckAgesWomen2, include=TRUE, echo=FALSE}
+
+age <- as.numeric(womenDF$`2012`[, "age"])
+age <- sapply(womenDF, function(x) as.numeric(x[ , "age"]))
+boxplot(age, main = "Boxplots of women's age by year", ylab = "Age", xlab = "Year")
+```
+
+Here we perform a deeper dive into the men's run times.  All years show reasonable run times and only one missing value is observed. Run times are observed to be slower every year.
+
+```{r SummarizeMenRunTimes, include=TRUE, echo=FALSE}
+summary(menDF$`1999`[, "runTime"])
+summary(menDF$`2000`[, "runTime"])
+summary(menDF$`2001`[, "runTime"])
+summary(menDF$`2002`[, "runTime"])
+summary(menDF$`2003`[, "runTime"])
+summary(menDF$`2004`[, "runTime"])
+summary(menDF$`2005`[, "runTime"])
+summary(menDF$`2006`[, "runTime"])
+summary(menDF$`2007`[, "runTime"])
+summary(menDF$`2008`[, "runTime"])
+summary(menDF$`2009`[, "runTime"])
+summary(menDF$`2010`[, "runTime"])
+summary(menDF$`2011`[, "runTime"])
+summary(menDF$`2012`[, "runTime"])
+```
+
+We ran the women's run times by year and noticed a similar trend to the men in that they increase then level off after 2005.
+
+```{r CheckTimesWomen, include=TRUE, echo=FALSE}
+
+times <- as.numeric(womenDF$`2012`[, "runTime"])
+times <- sapply(womenDF, function(x) as.numeric(x[ , "runTime"]))
+boxplot(times, main = "Boxplots of women's run times by year", ylab = "Run Time", xlab = "Year")
+```
+
+Here we perform a deeper dive into the women's run times.  All years show reasonable run times and no missing values are observed. Like the men, run times are observed to be slower every year.
+
+```{r SummarizeWomenRunTimes, include=TRUE, echo=FALSE}
+summary(womenDF$`1999`[, "runTime"])
+summary(womenDF$`2000`[, "runTime"])
+summary(womenDF$`2001`[, "runTime"])
+summary(womenDF$`2002`[, "runTime"])
+summary(womenDF$`2003`[, "runTime"])
+summary(womenDF$`2004`[, "runTime"])
+summary(womenDF$`2005`[, "runTime"])
+summary(womenDF$`2006`[, "runTime"])
+summary(womenDF$`2007`[, "runTime"])
+summary(womenDF$`2008`[, "runTime"])
+summary(womenDF$`2009`[, "runTime"])
+summary(womenDF$`2010`[, "runTime"])
+summary(womenDF$`2011`[, "runTime"])
+summary(womenDF$`2012`[, "runTime"])
+```
+
+Next we produce a scatterplot of the run times by age for the men.
+
+```{r MenTimeByAge, warnings=FALSE, include=TRUE, echo=FALSE}
+plot(runTime ~ age, data = cbMen, ylim = c(40, 180),
+     xlab = "Age (years)", ylab = "Run Time (minutes)")
+
+#par(oldPar)
+```
+
+There's a clear trend of longer run time as ages increase. However, the plot is a bit crowded so we produce one with smaller dots and a jitter affect to make it more readable.
+
+```{r Scatter, warnings=FALSE, include=TRUE, echo=FALSE}
+library(RColorBrewer)
+#ls("package:RColorBrewer")
+
+Purples8 = brewer.pal(9, "Purples")[8]
+#Purples8
+Purples8A = paste(Purples8, "14", sep = "")
+plot(runTime ~ jitter(age, amount = 0.5), 
+     data = cbMen, 
+     pch = 19,cex = 0.2, col = Purples8A,
+     ylim = c(45, 165), xlim = c(15, 85),
+     xlab = "Age (years)", ylab = "Run Time (minutes)")
+```
+
+This chart gives a clearer picture of the trend.  There are some large clusters between around 70 to 100 minutes. We can create a density plot to better see where the concentration of times are.
+
+```{r DensityPlot, warnings=FALSE, include=TRUE, echo=FALSE}
+smoothScatter(y = cbMen$runTime, x = cbMen$age,
+              ylim = c(40, 165), xlim = c(15, 85),
+              xlab = "Age (years)", ylab = "Run Time (minutes)")
+```
+
+To get another view of how run times increase with age, we place the ages into buckets and create boxplots of run times.
+
+```{r cbMenSub, warnings = FALSE, include=TRUE, echo=FALSE, results='hide', fig.keep='all'}
+invisible(library(dplyr))
+cbMenSub <- cbMen %>%
+  filter(runTime > 30 & !is.na(age) & age > 15)
+
+ageCat = cut(cbMenSub$age, breaks = c(seq(15, 75, 10), 90))
+
+plot(cbMenSub$runTime ~ ageCat, 
+     xlab = "Age (years)", ylab = "Run Time (minutes)")
+```
+
+```{r cbWomenSub, warnings = FALSE, include=TRUE, echo=FALSE, results='hide',fig.keep='all'}
+invisible(library(dplyr))
+cbWomenSub <- cbWomen %>%
+  filter(runTime > 30 & !is.na(age) & age > 15)
+
+ageCat = cut(cbWomenSub$age, breaks = c(seq(15, 75, 10), 90))
+
+plot(cbWomenSub$runTime ~ ageCat, 
+     xlab = "Age (years)", ylab = "Run Time (minutes)")
+```
+
+We then boxplot the binned age groups. In the older buckets, the number of runners above the top line decreases. This indicates that older runners deviate to a shared mean and that once over 65, only serious runners participate.
+
+Next we preform a simple regression. We observe a coefficent of 0.225 for age. This confirms our earlier findings that as age increases, run times increase.
+
+```{r Regeression, warnings=FALSE, include=TRUE, echo=FALSE}
+lmAge = lm(runTime ~ age, data = cbMenSub)
+lmAge$coefficients
+
+summary(lmAge)
+class(lmAge)
+```
+
+We used the aforementioned regression to create the green line below of predicted run times by age. We plot it along with the density scatter plot and notice that predicted run times remain around a zero residual, until age 60. After age 60, it shows seperation from the actual values and overpredicts run time.
+
+```{r ResidLoess, warnings=FALSE, include=TRUE, echo=FALSE}
+
+smoothScatter(x = cbMenSub$age, y = lmAge$residuals,
+              xlab = "Age (years)", ylab = "Residuals")
+abline(h = 0, col = "purple", lwd = 3)
+ 
+resid.lo = loess(resids ~ age, 
+                 data = data.frame(resids = residuals(lmAge),
+                                   age = cbMenSub$age))
+
+age20to80 = 20:80
+
+resid.lo.pr = predict(resid.lo, newdata = data.frame(age = age20to80))
+lines(x = age20to80, y = resid.lo.pr, col = "green", lwd = 2)
+
+```
+
+Since the density is high from 80 to 100 minutes, a LOESS regression is run. LOESS creates a polynomial fit to the points, where more weight is given to points near the point whose response is being estimated and less weight to points further away. Furthermore, since seperation occurs around age 50, we create an additional parameter that measures the number of years older than 50 the runners are. Not that runners under 50 are given a value of zero in this over 50 parameter.
+
+```{r MenOver50, warnings=FALSE, include=TRUE, echo=FALSE}
+
+menRes.lo = loess(runTime ~ age, cbMenSub)
+menRes.lo.pr = predict(menRes.lo, data.frame(age = age20to80))
+over50 = pmax(0, cbMenSub$age - 50)
+
+lmOver50 = lm(runTime ~ age + over50, data = cbMenSub)
+
+summary(lmOver50)
+```
+
+After performing the LOESS, we notice a large coefficient for runners over 50 and low coefficent for age relative to the simple regression.
+We want to take this a step further so we isolate to runners over age 30, 40, 50, and 60.
+
+```{r BinAge, include = FALSE, echo=FALSE}
+decades = seq(30, 60, by = 10)
+overAge = lapply(decades, 
+                 function(x) pmax(0, (cbMenSub$age - x)))
+names(overAge) = paste("over", decades, sep = "")
+overAge = as.data.frame(overAge)
+#tail(overAge)
+```
+
+Once we have our data binned this way, we can perform a piecewise linear regression.
+
+```{r OverAge, warnings=FALSE, include=TRUE, echo=FALSE}
+lmPiecewise = lm(runTime ~ . , 
+                 data = cbind(cbMenSub[, c("runTime", "age")], 
+                              overAge))
+
+summary(lmPiecewise)
+
+# overAge20 = lapply(decades, function(x) pmax(0, (age20to80 - x)))
+# names(overAge20) = paste("over", decades, sep = "")
+# overAgeDF = cbind(age = data.frame(age = age20to80), overAge20)
+
+#tail(overAgeDF)
+```
+
+From the piecewise linear regression, we notice a large negative coefficeint for runners under age 30 of -0.477.  Runners over age 40 and over age 50 have coefficients of 0.222 and 0.494 respectively. Runners over age 60 have a relatively flat coefficient. We proceed to plot predicted run time values using both the LOESS method and Piecewise linear regression.
+
+```{r LoessCurves1, warnings=FALSE, include=TRUE, echo=FALSE}
+overAge20 = lapply(decades, function(x) pmax(0, (age20to80 - x)))
+names(overAge20) = paste("over", decades, sep = "")
+overAgeDF = cbind(age = data.frame(age = age20to80), overAge20)
+
+predPiecewise = predict(lmPiecewise, overAgeDF)
+
+plot(predPiecewise ~ age20to80,
+     type = "l", col = "purple", lwd = 3,
+     xlab = "Age (years)", ylab = "Run Time Prediction")
+
+lines(x = age20to80, y = menRes.lo.pr, col = "green", lty = 2, lwd = 3)
+
+legend("topleft", col = c("purple", "green"),
+       lty = c(1, 2), lwd= 3,
+       legend = c("Piecewise Linear", "Loess Curve"), bty = "n")
+```
+
+The next graph shows the number of runners each year. We notice a gradual increase from 3,000 to 7,000 runners. This along with the fact that ages were getting younger while run times were getting slower may be an indication that more amateur runners are signing up.
+
+```{r NumRunners, warnings=FALSE, include=TRUE, echo=FALSE}
+#pdf("CB_NumRunnersLinePlot.pdf", width = 8, height = 6)
+oldPar = par(mar = c(4.1, 4.1, 1, 1))
+
+numRunners = with(cbMen, tapply(runTime, year, length))
+plot(numRunners ~ names(numRunners), type="l", lwd = 2,
+     xlab = "Years", ylab = "Number of Runners")
+
+par(oldPar)
+#dev.off()
+```
+
+Next we plot age density by year for the men. We notice a shift to younger racers from 1999 to 2012. This gives us an interesting question to ask. Why does the average time increase although the average age decreases?
+
+```{r AgeDensity, warnings=FALSE, include=TRUE, echo=FALSE}
+#pdf("CB_AgeDensity99vs12.pdf", width = 8, height = 6)
+oldPar = par(mar = c(4.1, 4.1, 1, 1))
+
+age1999 = cbMenSub[ cbMenSub$year == 1999, "age" ]
+age2012 = cbMenSub[ cbMenSub$year == 2012, "age" ]
+
+plot(density(age1999, na.rm = TRUE), 
+     ylim = c(0, 0.05), col = "purple",
+     lwd = 3,  xlab = "Age (years)",  main = "")
+lines(density(age2012, na.rm = TRUE), 
+      lwd = 3, lty = 2, col="green")
+legend("topleft", col = c("purple", "green"), lty= 1:2, lwd = 3,
+       legend = c("1999", "2012"), bty = "n")
+
+par(oldPar)
+#dev.off()
+```
+
+```{r QQPlot, warnings=FALSE, include=TRUE, echo=FALSE}
+qqplot(age1999, age2012, pch = 19, cex = 0.5, 
+       ylim = c(10,90), xlim = c(10,90), 
+       xlab = "Age in 1999 Race",
+       ylab = "Age in 2012 Race", 
+       main = "Quantile-quantile plot of male runner's age")
+abline(a =0, b = 1, col="red", lwd = 2)
+```
+
+To answer the question of why the run times increase although age decreases, we need to assess the predicted run time by age in different years.  We notice across the board the runners are slower. The gap is widest at age 40. Could this indicate that the runner's include more amatuers? We can answer this by assessing what percentage of runners come from countries where professional runners are prevalent, such as Kenya.
+
+```{r Predict1, warnings=FALSE, include=TRUE, echo=FALSE}
+mR.lo99 = loess(runTime ~ age, cbMenSub[ cbMenSub$year == 1999,])
+mR.lo.pr99 = predict(mR.lo99, data.frame(age = age20to80))
+
+mR.lo12 = loess(runTime ~ age, cbMenSub[ cbMenSub$year == 2012,])
+mR.lo.pr12 = predict(mR.lo12, data.frame(age = age20to80))
+
+plot(mR.lo.pr99 ~ age20to80,
+     type = "l", col = "purple", lwd = 3,
+     xlab = "Age (years)", ylab = "Fitted Run Time (minutes)")
+   
+lines(x = age20to80, y = mR.lo.pr12,
+      col = "green", lty = 2, lwd = 3)
+ 
+legend("topleft", col = c("purple", "green"), lty = 1:2, lwd = 3,
+       legend = c("1999", "2012"), bty = "n")
+```
+
+When we aggregate the data, we observe that in 1999 twelve Kenyans ran. In 2012, only three Kenyans ran although the number of runners had more than doubled. This supports our theory that more amateurs and less professionals ran the race over the years.
+
+```{r Kenyans, include = FALSE, echo=FALSE}
+#menDF <- mapply(createDF, menResMat, year = 1999:2012, sex = "M", SIMPLIFY = F)
+#womenDF <- mapply(createDF, womenResMat, year = 1999:2012, sex = "W", SIMPLIFY = F)
+
+Matrix1999 <- menDF$`1999`
+Matrix1999$count <- 1
+Count1999 <- aggregate(Matrix1999$count, by = list(Category = Matrix1999$home), FUN=sum)
+
+Matrix2012 <- menDF$`2012`
+Matrix2012$count <- 1
+Count2012 <- aggregate(Matrix2012$count, by = list(Category = Matrix2012$home), FUN=sum)
+
+#Count1999
+#Count2012
+```
+
+Another visualization of how well the predictive models works is to look at the gap between predictions and actuals.  We notice it's easiest to predict times for runners between the ages of 50 and 60 and hardest for runners between age 70 and 80.
+
+```{r Gap14, warnings=FALSE, include=TRUE, echo=FALSE}
+gap14 = mR.lo.pr12 - mR.lo.pr99
+
+#pdf("CB_DifferenceInFittedCurves.pdf", width = 8, height = 6)
+oldPar = par(mar = c(4.1, 4.1, 1, 1))
+
+plot(gap14 ~ age20to80, type = "l" , xlab = "Age (years)", 
+     ylab = "Difference in Fitted Curves (minutes)", lwd = 2)
+
+par(oldPar)
+#dev.off()
+```
+
+## Conclusion
+In all practical scenarios, before any data analysis methods can be performed, the data needs to be first cleaned and formatted properly. This takes more time and effort than the actual analysis process. Real world data sets are almost never available to a data scientist in a perfect state and can present a myriad of challenges that must be overcome before starting the actual analysis. In this case study, we cleaned both men's and women’s race results data files from the Cherry Blossom Ten Mile Run for the years 1999 through 2012. In our initial analysis of age distribution across all years from 1999 to 2012, for the general population of male race runners, we find a right-skewed distribution with the highest frequency of runners falling into the 30-40 years age bin. Using a stacked density plot to show a single curve for each year, there is a notable decrease in mean age from 1999 to recent years and earlier years tend to have a much more normal distribution in age compared to recent years.
+
+Furthermore, our regression analyses confirmed what we learned from the literature review. While there is a steady peformance degradation as runners age, an inflection point occurs around age 50. This coincides with the research that shows consistent runners remained conditioned for endurance exercise into early old age. Consistency and good lifestyle choices can overcome age related peformance decrease.
+
+## Future Work
+As an extension of this effort, future works could possibly include modeling performance metrics and age distributions using different visualizations. We might consider evaluating age distribution across each year using residual plots or heat maps. Results would then be evaluated and compared against the density curves, quantile-quantile plots, and boxplots analyses to gain deeper insight and likely reinforce findings.
+
+## References
+1.) D. Lang and D. Nolan, *Data Science in R: A Case Studies Approach to Computation Reasoning and Problem Solving.* New York, New York: CRC Press.
+    "Chapter 2: Modeling Runners’ Times in the Cherry Blossom Race"
+
+2.) bthomasbailey, cherry-blossom-run (2017), GitHub repository,
+    https://github.com/bthomasbailey/cherry-blossom-run
+
+3.) Stefano Maria Iacus, Review of *Automated Data Collection with R – A Practical Guide to Web Scraping and Text Mining*, University of Milan
+    https://www.researchgate.net/profile/Stefano_Iacus/publication/284518787_Automated_Data_Collection_with_R_-_A_Practical_Guide_to_Web_Scraping_and_Text_Mining/links/56f1352d08ae5c367d4a9926/Automated-Data-Collection-with-R-A-Practical-Guide-to-Web-Scraping-and-Text-Mining.pdf
+    
+4.) Leyk, Erley, Ridder, Leurs, Ruther, Wunderlich, Sievert, Baum, Essfeld, *Age-related Changes in Marathon and Half-Marathon Performances*, German Sports University of COlogne, 2 Central Institute of the Federal Armed Forces Medical Services Koblenz
+    https://www.researchgate.net/profile/Dieter_Leyk/publication/6236463_Age-related_Changes_in_Marathon_and_Half-Marathon_Performances/links/00b7d51a6137a2ad50000000.pdf
+    
+5.) Mark Lebetkin, *Endurance Athletes Peak Later Than You Think*
+    https://www.theactivetimes.com/why-middle-age-isn-t-past-your-prime
+    

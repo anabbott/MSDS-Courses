@@ -1,0 +1,879 @@
+---
+title:  "MSDS 7333 QTW - Unit 10 Case Study - Spam Classification"
+author: "Armand Post, Mustafa Sakarwala, Andrew Abbott"
+date:   "March 20, 2018"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+#knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(gdata)
+```
+
+## Abstract
+
+In this case study, we have examined more than 6,000 email messages to develop a model and test spam filters via classification trees and recursive partitioning. Spam filters are utilized by email providers to scan all emails and are designed to examine content and flag any unwanted messages, known as spam and not flag any wanted messages known as ham. Spam data is classified via machine learning techniques trained with messages known to be either ham or spam by SpamAssassin (http://spamassassin.apache.org) specifically for creating and testing these spam filters. The R statistical language is an excellent tool for identifying spam and processing text using approaches such as decision trees. The decision tree approach uses message characteristics from the email content to derive sets of features for email classification.
+
+For the purpose of this casestudy, we are only using the classification tree approach. Recursive partitioning is the method of choice for building decision trees from derived features. To achive this we are using the rpart partitioning algorithm. Several parameters and arguments are explored by using the rpart algorithm through the rpart.control function, which enables control of each parameter input. The rpart.control function does not accept a list of values for each parameter to generate all possible combinations of the argument values. This limitation of rpart.control is addressed with custom code. After tweaking parameters values and calculating prediction accuracies for various possibilities, we find that resulting trees make sense with our understanding of how the parameters are used and we are able to improve overall prediction compared to default results.
+
+## Introduction
+
+The purpose of this study is to put forward a spam mail rule based on management theory by utilizing data mining to manage the information and to explore options on automating classification and filtering of unwanted and potentially harmful email messages, referred to hereafter as spam.
+
+Spam data used in this study comes in from 6,000 messages previously classified by SpamAssassin (http://spamassassin.apache.org) specifically for creating and testing spam filters. The information contained in the messages must be organized and processed in order to correctly quantify for further analysis. Most anti-spam researched focused on developing a precise filter to classify emails. We will use the R statistical language to conduct text processing for this initial step and the second step uses either text mining for common word filters or decision trees. The text mining approach looks for words and compares associated frequencies in ham versus spam, while the decision tree approach uses message characteristics to derive variables for email classification. For the purposes of this case study, only the decision tree approach is used.
+
+To read the 6,000 email messages into R, each file is read as its own message. Various parts are then identified within each message as one of the following: (1) the header (sender and subject information); (2) the message body; or (3) an attachment. However, prior to designing data extraction, we investigate email structures to detail and understand the general message format. Then the headers and message bodies can be processed for extraction. Examples of key information gathered include identifying excessive amounts of punctuation and capitalization in the subject line or character count and frequency in the body. The decision tree is then used to derive variables associated with certain characteristics to classify the messages.  
+
+We are Answering Q.19 from the *Data Science in R* textbook (Pg. 168): "Consider the other parameters that can be used to control the recursive partitioning process. Read the documentation for them in the rpart.control() documentation. Also, carry out an Internet search for more information on how to tweak the rpart() tuning parameters. Experiment with values for these parameters. Do the trees that result make sense with your understanding of how the parameters are used? Can you improve the prediction using them?"
+
+
+## Literature Review
+
+Aside from e-mail, spam exists in a number of areas of the internet including social networks, web pages, and phone communication. In their paper on Spam detection on Twitter, McCord and Chuah described using four traditional Machine Learning classifiers for spam detection: Random Forest, Support Vector Machine, Naïve Bayesian, and K-Nearest Neighbor. The author was able to achieve 95.7% precision via Random Forest. At the time the paper was written, Twitter was using a number of ad hoc methods to deal with spam. These included having users self report spam and counting frequency of spam messages with usernames associated. However these approaches allowed for Twitter users to falsely flag other users as spammers and allowed spammers to tag regular users in their messages which resulted in then being incorrectly identified as spammers.
+
+Spam detection continues to evolve to allow real time monitoring of phone calls. In their paper *Spam Detection For Outgoing And Incoming Calls*, Jacobson and Toksoz explain how software is being developed to monitor outgoing calls live on a server equipped with machine learning algorithms. This is to prevent fraud that happens when a consumer buys an international phone calling card and one of the routing carriers in the chain diverts the call to a scam number which usually consists of an audio recording designed to cause the customer to waste credits which boosts revenue for the carriers. If the call is intercepted, the customer can be notified by an audio cue such as a beep.
+
+## Data Scrubbing
+
+The most time consuming, yet important part of this anlysis was the data scrubbing. This data scrubbing included seperating the emails into various sections which include the header, body, and attachment. Among the final steps in the data scrubbing was the generation of a list of keywords that occur commonly in spam emails such as "money", "prescription", and "credit". These keywords were scanned for in the emails to generate the estimate of spam or ham.
+
+The first step was to load the email file locations into the fullDirNames variable. The emails are sorted into five folders according to the classification assigned by the SpamAssassin website.
+
+```{r, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+spamPath = "SpamAssassin"
+dirNames = list.files(paste(spamPath, sep=.Platform$file.sep))
+(fullDirNames = paste(spamPath, dirNames, sep=.Platform$file.sep))
+```
+
+Function were then created to process the email. The processEmail function calls other functions which read the emails, split the emails into header, body, and attachment, and then processes each section into the emailStruct variable.
+
+```{r splitMessage, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+splitMessage = function(msg) {
+# split any message by empty line split point
+  splitPoint = match("", msg)
+  header = msg[1:(splitPoint-1)]
+  body = msg[ -(1:splitPoint) ]
+  return(list(header = header, body = body))
+}
+```
+
+```{r getBoundary, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+getBoundary = function(header) {
+  boundaryIdx = grep("boundary=", header)
+  boundary = gsub('"', "", header[boundaryIdx])
+  gsub(".*boundary= *([^;]*);?.*", "\\1", boundary)
+}
+```
+
+```{r stopWords, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+library(tm)
+stopWords = stopwords()
+cleanSW = tolower(gsub("[[:punct:]0-9[:blank:]]+", " ", stopWords))
+SWords = unlist(strsplit(cleanSW, "[[:blank:]]+"))
+SWords = SWords[ nchar(SWords) > 1 ]
+stopWords = unique(SWords)
+```
+
+```{r processHeader, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+processHeader = function(header) {
+       # modify the first line to create a key:value pair
+  header[1] = sub("^From", "Top-From:", header[1])
+  
+  headerMat = read.dcf(textConnection(header), all = TRUE)
+  headerVec = unlist(headerMat)
+  
+  dupKeys = sapply(headerMat, function(x) length(unlist(x)))
+  names(headerVec) = rep(colnames(headerMat), dupKeys)
+  
+  return(headerVec)
+}
+```
+
+```{r processAttach, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+processAttach = function(body, contentType){
+
+  n = length(body)
+  boundary = getBoundary(contentType)
+ 
+  bString = paste("--", boundary, sep = "")
+  bStringLocs = which(bString == body)
+  eString = paste("--", boundary, "--", sep = "")
+  eStringLoc = which(eString == body)
+  
+  if (length(eStringLoc) == 0) eStringLoc = n
+  if (length(bStringLocs) <= 1) {
+    attachLocs = NULL
+    msgLastLine = n
+    if (length(bStringLocs) == 0) bStringLocs = 0
+  } else {
+    attachLocs = c(bStringLocs[ -1 ],  eStringLoc)
+    msgLastLine = bStringLocs[2] - 1
+  }
+  
+  msg = body[ (bStringLocs[1] + 1) : msgLastLine] 
+  if ( eStringLoc < n )
+    msg = c(msg, body[ (eStringLoc + 1) : n ])
+  
+  if ( !is.null(attachLocs) ) {
+    attachLens = diff(attachLocs, lag = 1) 
+    attachTypes = mapply(function(begL, endL) {
+      CTloc = grep("^[Cc]ontent-[Tt]ype", body[ (begL + 1) : (endL - 1)])
+      if ( length(CTloc) == 0 ) {
+        MIMEType = NA
+      } else {
+        CTval = body[ begL + CTloc[1] ]
+        CTval = gsub('"', "", CTval )
+        MIMEType = sub(" *[Cc]ontent-[Tt]ype: *([^;]*);?.*", "\\1", CTval)   
+      }
+      return(MIMEType)
+    }, attachLocs[-length(attachLocs)], attachLocs[-1])
+  }
+  
+  if (is.null(attachLocs)) return(list(body = msg, attachDF = NULL) )
+  return(list(body = msg, 
+             attachDF = data.frame(aLen = attachLens, 
+                                     aType = unlist(attachTypes),
+                                     stringsAsFactors = FALSE)))                                
+}                       
+```
+
+```{r readEmail, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+readEmail = function(dirName) {
+  
+# retrieve the names of files in directory
+  fileNames = list.files(dirName, full.names = TRUE)
+  
+# drop files that are not email
+  notEmail = grep("cmds$", fileNames)
+  if ( length(notEmail) > 0) fileNames = fileNames[ - notEmail ]
+
+# read all files in the directory
+  lapply(fileNames, readLines, encoding = "latin1")
+}
+```
+
+```{r processAllEmail, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+processAllEmail = function(dirName, isSpam = FALSE)
+{
+       # read all files in the directory
+  messages = readEmail(dirName)
+  fileNames = names(messages)
+  n = length(messages)
+  
+       # split header from body
+  eSplit = lapply(messages, splitMessage)
+  rm(messages)
+
+       # process header as named character vector
+  headerList = lapply(eSplit, function(msg) 
+                                 processHeader(msg$header))
+  
+       # extract content-type key
+  contentTypes = sapply(headerList, function(header) 
+                                       header["Content-Type"])
+  
+       # extract the body
+  bodyList = lapply(eSplit, function(msg) msg$body)
+  rm(eSplit)
+
+       # which email have attachments
+  hasAttach = grep("^ *multi", tolower(contentTypes))
+
+       # get summary stats for attachments and the shorter body
+  attList = mapply(processAttach, bodyList[hasAttach], 
+                   contentTypes[hasAttach], SIMPLIFY = FALSE)
+  
+  bodyList[hasAttach] = lapply(attList, function(attEl) 
+                                           attEl$body)
+ 
+  attachInfo = vector("list", length = n )
+  attachInfo[ hasAttach ] = lapply(attList, 
+                                  function(attEl) attEl$attachDF)
+ 
+       # prepare return structure
+  emailList = mapply(function(header, body, attach, isSpam) {
+                       list(isSpam = isSpam, header = header, 
+                            body = body, attach = attach)
+                     },
+                     headerList, bodyList, attachInfo, 
+                     rep(isSpam, n), SIMPLIFY = FALSE )
+  names(emailList) = fileNames
+  
+  invisible(emailList)
+}
+```
+
+```{r emailStruct, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+emailStruct = mapply(processAllEmail, fullDirNames,
+                     isSpam = rep( c(FALSE, TRUE), 3:2))      
+emailStruct = unlist(emailStruct, recursive = FALSE)
+```
+
+```{r funcList, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+funcList = list(
+  isSpam =
+    expression(msg$isSpam)
+  ,
+  isRe =
+    function(msg) {
+      "Subject" %in% names(msg$header) && 
+        length(grep("^[ \t]*Re:", msg$header[["Subject"]])) > 0
+    }
+  ,
+  numLines =
+    function(msg) length(msg$body)
+  ,
+  bodyCharCt =
+    function(msg)
+      sum(nchar(msg$body))
+  ,
+  underscore =
+    function(msg) {
+      if(!"Reply-To" %in% names(msg$header))
+        return(FALSE)
+      
+      txt <- msg$header[["Reply-To"]]
+      length(grep("_", txt)) > 0  && 
+        length(grep("[0-9A-Za-z]+", txt)) > 0
+    }
+  ,
+  subExcCt = 
+    function(msg) {
+      x = msg$header["Subject"]
+      if(length(x) == 0 || sum(nchar(x)) == 0 || is.na(x))
+        return(NA)
+      
+      sum(nchar(gsub("[^!]","", x)))
+    }
+  ,
+  subQuesCt =
+    function(msg) {
+      x = msg$header["Subject"]
+      if(length(x) == 0 || sum(nchar(x)) == 0 || is.na(x))
+        return(NA)
+      
+      sum(nchar(gsub("[^?]","", x)))
+    }
+  ,
+  numAtt = 
+    function(msg) {
+      if (is.null(msg$attach)) return(0)
+      else nrow(msg$attach)
+    }
+   
+  ,
+  priority =
+    function(msg) {
+      ans <- FALSE
+      # Look for names X-Priority, Priority, X-Msmail-Priority
+      # Look for high any where in the value
+      ind = grep("priority", tolower(names(msg$header)))
+      if (length(ind) > 0)  {
+        ans <- length(grep("high", tolower(msg$header[ind]))) >0
+      }
+      ans
+    }
+  ,
+  numRec =
+    function(msg) {
+      # unique or not.
+      els = getMessageRecipients(msg$header)
+      
+      if(length(els) == 0)
+        return(NA)
+      
+      # Split each line by ","  and in each of these elements, look for
+      # the @ sign. This handles
+      tmp = sapply(strsplit(els, ","), function(x) grep("@", x))
+      sum(sapply(tmp, length))
+    }
+  ,
+  perCaps =
+    function(msg)
+    {
+      body = paste(msg$body, collapse = "")
+      
+      # Return NA if the body of the message is "empty"
+      if(length(body) == 0 || nchar(body) == 0) return(NA)
+      
+      # Eliminate non-alpha characters and empty lines 
+      body = gsub("[^[:alpha:]]", "", body)
+      els = unlist(strsplit(body, ""))
+      ctCap = sum(els %in% LETTERS)
+      100 * ctCap / length(els)
+    }
+  ,
+  isInReplyTo =
+    function(msg)
+    {
+      "In-Reply-To" %in% names(msg$header)
+    }
+  ,
+  sortedRec =
+    function(msg)
+    {
+      ids = getMessageRecipients(msg$header)
+      all(sort(ids) == ids)
+    }
+  ,
+  subPunc =
+    function(msg)
+    {
+      if("Subject" %in% names(msg$header)) {
+        el = gsub("['/.:@-]", "", msg$header["Subject"])
+        length(grep("[A-Za-z][[:punct:]]+[A-Za-z]", el)) > 0
+      }
+      else
+        FALSE
+    },
+  hour =
+    function(msg)
+    {
+      date = msg$header["Date"]
+      if ( is.null(date) ) return(NA)
+      # Need to handle that there may be only one digit in the hour
+      locate = regexpr("[0-2]?[0-9]:[0-5][0-9]:[0-5][0-9]", date)
+      
+      if (locate < 0)
+        locate = regexpr("[0-2]?[0-9]:[0-5][0-9]", date)
+      if (locate < 0) return(NA)
+      
+      hour = substring(date, locate, locate+1)
+      hour = as.numeric(gsub(":", "", hour))
+      
+      locate = regexpr("PM", date)
+      if (locate > 0) hour = hour + 12
+      
+      locate = regexpr("[+-][0-2][0-9]00", date)
+      if (locate < 0) offset = 0
+      else offset = as.numeric(substring(date, locate, locate + 2))
+      (hour - offset) %% 24
+    }
+  ,
+  multipartText =
+    function(msg)
+    {
+      if (is.null(msg$attach)) return(FALSE)
+      numAtt = nrow(msg$attach)
+      
+      types = 
+        length(grep("(html|plain|text)", msg$attach$aType)) > (numAtt/2)
+    }
+  ,
+  hasImages =
+    function(msg)
+    {
+      if (is.null(msg$attach)) return(FALSE)
+      
+      length(grep("^ *image", tolower(msg$attach$aType))) > 0
+    }
+  ,
+  isPGPsigned =
+    function(msg)
+    {
+      if (is.null(msg$attach)) return(FALSE)
+      
+      length(grep("pgp", tolower(msg$attach$aType))) > 0
+    },
+  perHTML =
+    function(msg)
+    {
+      if(! ("Content-Type" %in% names(msg$header))) return(0)
+      
+      el = tolower(msg$header["Content-Type"]) 
+      if (length(grep("html", el)) == 0) return(0)
+      
+      els = gsub("[[:space:]]", "", msg$body)
+      totchar = sum(nchar(els))
+      totplain = sum(nchar(gsub("<[^<]+>", "", els )))
+      100 * (totchar - totplain)/totchar
+    },
+  subSpamWords =
+    function(msg)
+    {
+      if("Subject" %in% names(msg$header))
+        length(grep(paste(SpamCheckWords, collapse = "|"), 
+                    tolower(msg$header["Subject"]))) > 0
+      else
+        NA
+    }
+  ,
+  subBlanks =
+    function(msg)
+    {
+      if("Subject" %in% names(msg$header)) {
+        x = msg$header["Subject"]
+        # should we count blank subject line as 0 or 1 or NA?
+        if (nchar(x) == 1) return(0)
+        else 100 *(1 - (nchar(gsub("[[:blank:]]", "", x))/nchar(x)))
+      } else NA
+    }
+  ,
+  noHost =
+    function(msg)
+    {
+      # Or use partial matching.
+      idx = pmatch("Message-", names(msg$header))
+      
+      if(is.na(idx)) return(NA)
+      
+      tmp = msg$header[idx]
+      return(length(grep(".*@[^[:space:]]+", tmp)) ==  0)
+    }
+  ,
+  numEnd =
+    function(msg)
+    {
+      # If we just do a grep("[0-9]@",  )
+      # we get matches on messages that have a From something like
+      # " \"marty66@aol.com\" <synjan@ecis.com>"
+      # and the marty66 is the "user's name" not the login
+      # So we can be more precise if we want.
+      x = names(msg$header)
+      if ( !( "From" %in% x) ) return(NA)
+      login = gsub("^.*<", "", msg$header["From"])
+      if ( is.null(login) ) 
+        login = gsub("^.*<", "", msg$header["X-From"])
+      if ( is.null(login) ) return(NA)
+      login = strsplit(login, "@")[[1]][1]
+      length(grep("[0-9]+$", login)) > 0
+    },
+  isYelling =
+    function(msg)
+    {
+      if ( "Subject" %in% names(msg$header) ) {
+        el = gsub("[^[:alpha:]]", "", msg$header["Subject"])
+        if (nchar(el) > 0) nchar(gsub("[A-Z]", "", el)) < 1
+        else FALSE
+      }
+      else
+        NA
+    },
+  forwards =
+    function(msg)
+    {
+      x = msg$body
+      if(length(x) == 0 || sum(nchar(x)) == 0)
+        return(NA)
+      
+      ans = length(grep("^[[:space:]]*>", x))
+      100 * ans / length(x)
+    },
+  isOrigMsg =
+    function(msg)
+    {
+      x = msg$body
+      if(length(x) == 0) return(NA)
+      
+      length(grep("^[^[:alpha:]]*original[^[:alpha:]]+message[^[:alpha:]]*$", 
+                  tolower(x) ) ) > 0
+    },
+  isDear =
+    function(msg)
+    {
+      x = msg$body
+      if(length(x) == 0) return(NA)
+      
+      length(grep("^[[:blank:]]*dear +(sir|madam)\\>", 
+                  tolower(x))) > 0
+    },
+  isWrote =
+    function(msg)
+    {
+      x = msg$body
+      if(length(x) == 0) return(NA)
+      
+      length(grep("(wrote|schrieb|ecrit|escribe):", tolower(x) )) > 0
+    },
+  avgWordLen =
+    function(msg)
+    {
+      txt = paste(msg$body, collapse = " ")
+      if(length(txt) == 0 || sum(nchar(txt)) == 0) return(0)
+      
+      txt = gsub("[^[:alpha:]]", " ", txt)
+      words = unlist(strsplit(txt, "[[:blank:]]+"))
+      wordLens = nchar(words)
+      mean(wordLens[ wordLens > 0 ])
+    }
+  ,
+  numDlr =
+    function(msg)
+    {
+      x = paste(msg$body, collapse = "")
+      if(length(x) == 0 || sum(nchar(x)) == 0)
+        return(NA)
+      
+      nchar(gsub("[^$]","", x))
+    }
+)
+```
+
+```{r getMessageRecipients, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+getMessageRecipients = function(header) {
+    c(if("To" %in% names(header))  header[["To"]] else character(0),
+      if("Cc" %in% names(header))  header[["Cc"]] else character(0),
+      if("Bcc" %in% names(header)) header[["Bcc"]] else character(0)
+    )
+  }
+```  
+
+```{r spamCheckWords, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+SpamCheckWords =
+  c("viagra", "pounds", "free", "weight", "guarantee", "million", 
+    "dollars", "credit", "risk", "prescription", "generic", "drug",
+    "financial", "save", "dollar", "erotic", "million", "barrister",
+    "beneficiary", "easy", 
+    "money back", "money", "credit card")
+```
+
+```{r createDF, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+createDerivedDF = function(email = emailStruct, operations = funcList, verbose = FALSE) {
+  els = lapply(names(operations),
+               function(id) {
+                 if(verbose) print(id)
+                 e = operations[[id]]
+                 v = if(is.function(e)) 
+                        sapply(email, e)
+                      else 
+                        sapply(email, function(msg) eval(e))
+                 v
+         })
+
+   df = as.data.frame(els)
+   names(df) = names(operations)
+   invisible(df)
+}
+```
+
+```{r emailDF, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+emailDF = createDerivedDF(emailStruct)
+```
+
+After organizing the emails into a structure more suitable for analysis our next step was to derive the variables which represent the set of features we use to classify the emails as spam or ham. Those features are listed here as seen on page 151 of *Data Science in R*:
+
+| Variable | Type     | Definition                                                                       |
+|:---------|:---------|:---------------------------------------------------------------------------------|
+| isRe     | logical  | TRUE if Re: appears at the start of the subject.|
+| numLines | integer  | Number of lines in the body of the message.|
+| bodyCharCt   | integer  | Number of characters in the body of the message.|
+| underscore     | logical  | TRUE if email address in the From field of the header contains an underscore.|
+| subExcCt | integer  | Number of exclamation marks in the subject.|
+| subQuesCt | integer  | Number of question marks in the subject.|
+| numAtt    | integer  | Number of attacments in the message.|
+| priority | logical  | TRUE is a Priority key is present in the header.|
+| numRec   | numeric  | Number of recipients of the message, including CCs.|
+| perCaps | numeric  | Percentage of capitals among all letters in the message body, excluding attachments.|
+| isInReplyTo  | logical  | TRUE if the IN-Reply-To key is present in the header.|
+| sortedRec | logical  | TRUE if the recipients' email addresses are sorts.|
+| subPunc | logical  | TRUE if words in the subject have punctuation or numbers embedded i  them, e.g., w!se.|
+| hour  | numeric  | Hour of the day in the Date field.|
+| multipartText | logical  | TRUE if the MIME type is multipart/text.|
+| hasImages | logical  | TRUE if the message contains images.|
+| isPGPsigned | logical  | TRUE if the message contains a PGP signature.|
+| perHTML | numeric  | Percentage of characters in HTML tags in the message body in comparison to all characters.|
+| subSpamWords | logical  | TRUE if the subject contains one of the words in a spam word vector.|
+| subBlanks | numeric  | Percentage of blanks in the subject.|
+| noHost | logical  | TRUE if there is no hostname in the Message-Id key in the header.|
+| numEnd | logical  | TRUE if the email sender's address (before the @) ends in a number.|
+| isYelling | logical  | TRUE if the subject is all capital letters.|
+| forwards | numeric  | Number of forward symbols in a line of the body, e.g., >>> xxx contains 3 forwards.|
+| iOrigMsg | logical  | TRUE if the message body contains the phrase 'original message'.|
+| isDear | logical  | TRUE if the message body contains the word 'dear'.|
+| isWrote | logical  | TRUE if the message contains the phrase 'wrote'.|
+| avgWordLen | numeric  | The average length of the words in the message.|
+| numDlr | numeric  | Number of dollar signs in the message body.|  
+  
+Each of the above variables was created for each email resulting the in final dataframe used for classification. The dataframe emailDF contains `r dim(emailDF)[1]` emails, each with `r dim(emailDF)[2]` variables. Next we investigated some of the features individually through visualizations.
+
+```{r NAs, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+indNA = which(is.na(emailDF$subExcCt))
+
+indNoSubject = which(sapply(emailStruct, 
+                            function(msg) 
+                              !("Subject" %in% names(msg$header))))
+
+all(indNA == indNoSubject)
+
+all(emailDF$bodyCharCt > emailDF$numLines)
+```
+
+## Visualizations
+
+As a high level data integrity check, we plotted the number of lines and number of characters together. Intuitively, the number of lines shouldn't exceed the number of characters assuming blank lines aren't used excessively. We see this holds true in the following visualization. No parts of the scatter plot fall on the leftside of the redline, which is where the number of characters and lines are even.
+
+```{r plot1, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+x.at = c(1,10,100,1000,10000,100000)
+y.at = c(1, 5, 10, 50, 100, 500, 5000)
+nL = 1 + emailDF$numLines
+nC = 1 + emailDF$bodyCharCt
+
+plot(nL ~ nC, log = "xy", pch=".", xlim=c(1,100000), axes = FALSE,
+     xlab = "Number of Characters", ylab = "Number of Lines")
+box() 
+axis(1, at = x.at, labels = formatC(x.at, digits = 0, format="d"))
+axis(2, at = y.at, labels = formatC(y.at, digits = 0, format="d")) 
+abline(a=0, b=1, col="red", lwd = 2)
+```
+
+Next we created some boxplots that showed spam emails include a larger proportion of capital letters. This may be a useful way to classify the emails as ham or spam.
+
+```{r plotSpam, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+percent = emailDF$perCaps
+isSpamLabs = factor(emailDF$isSpam, labels = c("ham", "spam"))
+boxplot(log(1 + percent) ~ isSpamLabs,
+        ylab = "Percent Capitals (log)")
+```
+
+Assessing a quantile-quantile plot of the percent of capital letters categorized by email type yielded some interesting results. We see that the slope isn't equal to one, which indicates that the distributions of percentage of capital letters is different for spam and ham. Although we have a couple of data points near 0,0 the intercept appears to be near zero for ham, but near the first quartile for spam. This indicates a shift in the mean of the distributions.
+
+```{r logSpam, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+logPerCapsSpam = log(1 + emailDF$perCaps[ emailDF$isSpam ])
+logPerCapsHam = log(1 + emailDF$perCaps[ !emailDF$isSpam ])
+
+qqplot(logPerCapsSpam, logPerCapsHam, 
+       xlab = "Regular Email", ylab = "Spam Email", 
+       main = "Percentage of Capital Letters (log scale)",
+       pch = 19, cex = 0.3)
+```
+
+In the next visualization, we plot percent of capital letters along with total characters. We can clearly see that spam emails tend to be longer and have more capital letters.
+
+```{r plotLogSpam, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+colI = c("#4DAF4A80", "#984EA380")
+logBodyCharCt = log(1 + emailDF$bodyCharCt)
+logPerCaps = log(1 + emailDF$perCaps)
+plot(logPerCaps ~ logBodyCharCt, xlab = "Total Characters (log)",
+     ylab = "Percent Capitals (log)",
+     col = colI[1 + emailDF$isSpam],
+     xlim = c(2,12), pch = 19, cex = 0.5)
+
+legend("topleft", col = c("purple", "green"),
+       lty = c(1, 1), lwd= 3,
+       legend = c("Spam", "Ham"), bty = "n")
+```
+
+```{r mosaicTable, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+table(emailDF$numAtt, isSpamLabs)
+```
+
+Another useful visualization was checking to see how often "Re:" was included in the emails, indicating that it had been replied to at some point. We can see that spam emails rarely get replied to from the below mosaic plot. This should prove useful when training the classification models.
+
+```{r mosaicPlot, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+colM = c("#E41A1C80", "#377EB880")
+isRe = factor(emailDF$isRe, labels = c("no Re:", "Re:"))
+mosaicplot(table(isSpamLabs, isRe), main = "Proportion of emails with 'Re:'",
+           xlab = "", ylab = "", color = colM)
+```
+
+Likewise, we see that ham emails typically do not contain hashtags.
+
+```{r mosaicPlot2, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+fromNE = factor(emailDF$numEnd, labels = c("No #", "#"))
+mosaicplot(table(isSpamLabs, fromNE), color = colM,
+           main = "Proportion of emails with hashtags", xlab="", ylab = "")
+```
+
+## Fitting the R Part model
+
+Now that we have a good feel for what parameters we can change to better train our spam classifier, we proceeded to fit the model. We performed this by creating test and training datasets for both ham and spam that were split to contain 30% of the records in the test set and 70% in the training set. The iterations of the models were assessed for accuracy including the number of Type I and Type II errors.
+
+```{r setupRpart, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+library(rpart)
+setupRpart = function(data) {
+  logicalVars = which(sapply(data, is.logical))
+  facVars = lapply(data[ , logicalVars], 
+                   function(x) {
+                      x = as.factor(x)
+                      levels(x) = c("F", "T")
+                      x
+                   })
+  cbind(facVars, data[ , - logicalVars])
+}
+```
+
+```{r emailDFrp, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+emailDFrp = setupRpart(emailDF)
+```
+
+```{r trainDF, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+spam = emailDFrp$isSpam == "T"
+numSpam = sum(spam)
+numHam = sum(!spam)
+
+set.seed(418910)
+testSpamIdx = sample(numSpam, size = floor(numSpam/3))
+testHamIdx = sample(numHam, size = floor(numHam/3))
+
+testDF = 
+  rbind( emailDFrp[ emailDFrp$isSpam == "T", ][testSpamIdx, ],
+         emailDFrp[emailDFrp$isSpam == "F", ][testHamIdx, ] )
+trainDF =
+  rbind( emailDFrp[emailDFrp$isSpam == "T", ][-testSpamIdx, ], 
+         emailDFrp[emailDFrp$isSpam == "F", ][-testHamIdx, ])
+
+rpartFit = rpart(isSpam ~ ., data = trainDF, method = "class")
+```
+
+```{r loadrPart, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+library(rpart.plot)
+```
+
+After fitting the model, we assessed the tree. We noticed that the a large number of ham emails, 1,359, fall into the leaf of the tree where percentage of caps is less than 13% and the number of forwards is less than 3.3. Only eight misclassfications fall into this area of the tree, indicating that captial letter proportions and number of forwards are good predictors. On the otherhand, we see a large proportion of the spam emails falling where the tree splits on the number of forwards greater than or equal to 9.6.
+
+```{r prp, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+prp(rpartFit, extra = 1)
+```
+
+This tree could then be used to predict the class of the emails in the test set. To evaluate the performance of the classification tree we assessed the rates of Type I and Type II errors. Type I and Type II errors are defined as stated below:
+- Type I  : The proportion of ham messages misclassified as spam.
+- Type II : The proportion of spam messages misclassified as ham.
+
+The type I error was found by dividing the number of the ham emails in the test set that were misclassified as spam by the number of ham emails in the test set.
+
+```{r predictions, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+predictions = predict(rpartFit, 
+       newdata = testDF[, names(testDF) != "isSpam"],
+       type = "class")
+ 
+predsForHam = predictions[ testDF$isSpam == "F" ]
+predsForSpam = predictions[ testDF$isSpam == "T" ]
+summary(predsForHam)
+```
+
+`r 100*(sum(predsForHam == "T") / length(predsForHam))`% of the ham emails in the test set were misclassified as spam. The type II error rate, the percentage of spam emails in the test set that were misclassified as ham, was `r 100*(sum(predsForSpam == "F") / length(predsForSpam))`%.  
+
+We observed a significantly higher Type II error rate. One way to improve those results could be to optimize the recursive partitioning function parameters. 
+
+## Parameter testing
+
+The rpart.control() function takes multiple arguments as parameters. Those arguments are listed below and are found in the [rpart.control documentation](https://www.rdocumentation.org/packages/rpart/versions/4.1-12/topics/rpart.control).
+
+|   Argument  |   Description                       |
+|:---------------|:-----------------------------------------------------------------------|
+|minsplit|the minimum number of observations that must exist in a node in order for a split to be attempted.|
+|minbucket|the minimum number of observations in any terminal <leaf> node. If only one of minbucket or minsplit is specified, the code either sets minsplit to minbucket*3 or minbucket to minsplit/3, as appropriate.|
+|cp|complexity parameter. Any split that does not decrease the overall lack of fit by a factor of cp is not attempted. For instance, with anova splitting, this means that the overall R-squared must increase by cp at each step. The main role of this parameter is to save computing time by pruning off splits that are obviously not worthwhile. Essentially,the user informs the program that any split which does not improve the fit by cp will likely be pruned off by cross-validation, and that hence the program need not pursue it.|
+|maxcompete|the number of competitor splits retained in the output. It is useful to know not just which split was chosen, but which variable came in second, third, etc.|
+|maxsurrogate|the number of surrogate splits retained in the output. If this is set to zero the compute time will be reduced, since approximately half of the computational time (other than setup) is used in the search for surrogate splits.|
+|usesurrogate|how to use surrogates in the splitting process. 0 means display only; an observation with a missing value for the primary split rule is not sent further down the tree. 1 means use surrogates, in order, to split subjects missing the primary variable; if all surrogates are missing the observation is not split. For value 2 ,if all surrogates are missing, then send the observation in the majority direction. A value of 0 corresponds to the action of tree, and 2 to the recommendations of Breiman et.al (1984).|
+|xval|number of cross-validations.|
+|surrogatestyle|controls the selection of a best surrogate. If set to 0 (default) the program uses the total number of correct classification for a potential surrogate variable, if set to 1 it uses the percent correct, calculated over the non-missing values of the surrogate. The first option more severely penalizes covariates with a large number of missing values.|
+|maxdepth|Set the maximum depth of any node of the final tree, with the root node counted as depth 0. Values greater than 30 rpart will give nonsense results on 32-bit machines.|
+
+Having a higher Type II error rates is preferred to a higher Type I error rate. This is because it would be mose costly to have a legitmate email flagged and go unread than vice-versa. 
+  
+First we investigated the complexity (cp) parameter as described above. We plot the Type I and Type II error rates across a range of values for the complexity parameter. The default value for cp is 0.01, so we can see that an improvement can be achieved at a lower complexity. In this use case, having a higher Type II error rate is preferred to a higher Type I error rate. This is because it would be more costly to have a legitimate email flagged and go unread than vice-versa. With this in mind, a complexity approaching zero yields the lowest Type I error rate.
+
+```{r predictions4, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+complexityVals = c(seq(0.00001, 0.0001, length=19),
+                   seq(0.0001, 0.001, length=19), 
+                   seq(0.001, 0.005, length=9),
+                   seq(0.005, 0.01, length=9))
+
+fits = lapply(complexityVals, function(x) {
+         rpartObj = rpart(isSpam ~ ., data = trainDF,
+                          method="class", 
+                          control = rpart.control(cp=x) )
+           
+         predict(rpartObj, 
+                 newdata = testDF[ , names(testDF) != "isSpam"],
+                 type = "class")
+        })
+
+spam = testDF$isSpam == "T"
+numSpam = sum(spam)
+numHam = sum(!spam)
+errs = sapply(fits, function(preds) {
+                      typeI = sum(preds[ !spam ] == "T") / numHam
+                      typeII = sum(preds[ spam ] == "F") / numSpam
+                      c(typeI = typeI, typeII = typeII)
+                     })
+```
+
+
+```{r finalPlot, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+library(RColorBrewer)
+cols = brewer.pal(9, "Set1")[c(3, 4, 5)]
+plot(errs[1,] ~ complexityVals, type="l", col=cols[2], 
+     lwd = 2, ylim = c(0,0.2), xlim = c(0,0.01), 
+     ylab="Error", xlab="complexity parameter values")
+points(errs[2,] ~ complexityVals, type="l", col=cols[1], lwd = 2)
+
+text(x =c(0.003, 0.0035), y = c(0.12, 0.05), 
+     labels=c("Type II Error", "Type I Error"))
+
+minI = which(errs[1,] == min(errs[1,]))[1]
+abline(v = complexityVals[minI], col ="grey", lty =3, lwd=2)
+
+text(0.0007, errs[1, minI]+0.01, 
+     formatC(errs[1, minI], digits = 2))
+text(0.0007, errs[2, minI]+0.01, 
+     formatC(errs[2, minI], digits = 3))
+```
+
+```{r minsplitparam, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+minsplitVals = c(seq(10,100,15))
+
+fits = lapply(minsplitVals, function(x) {
+         rpartObj = rpart(isSpam ~ ., data = trainDF,
+                          method="class", 
+                          control = rpart.control(minsplitVals=x) )
+           
+         predict(rpartObj, 
+                 newdata = testDF[ , names(testDF) != "isSpam"],
+                 type = "class")
+        })
+
+spam = testDF$isSpam == "T"
+numSpam = sum(spam)
+numHam = sum(!spam)
+errs = sapply(fits, function(preds) {
+                      typeI = sum(preds[ !spam ] == "T") / numHam
+                      typeII = sum(preds[ spam ] == "F") / numSpam
+                      c(typeI = typeI, typeII = typeII)
+                     })
+```
+
+Further exploration was done on the remaining rpart.control parameters. As seen below, demonstrating the error rates of a range of minimum split parameters, the other parameters did not influence our spam classification model.
+
+```{r finalPlot2, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+library(RColorBrewer)
+cols = brewer.pal(9, "Set1")[c(3, 4, 5)]
+plot(errs[1,] ~ minsplitVals, type="l", col=cols[2], 
+     lwd = 2, ylim = c(0,0.2), xlim = c(10,100), 
+     ylab="Error", xlab="Use Surrogate parameter values")
+points(errs[2,] ~ minsplitVals, type="l", col=cols[1], lwd = 2)
+
+text(x =c(25, 70), y = c(0.16, 0.05), 
+     labels=c("Type II Error", "Type I Error"))
+
+minI = which(errs[1,] == min(errs[1,]))[1]
+abline(v = minsplitVals[minI], col ="grey", lty =3, lwd=2)
+
+text(0.0007, errs[1, minI]+0.01, 
+     formatC(errs[1, minI], digits = 2))
+text(0.0007, errs[2, minI]+0.01, 
+     formatC(errs[2, minI], digits = 3))
+```
+
+## Conclusion
+
+We have examined more than 6,000 email messages to develop a model and test spam filters via classification trees and recursive partitioning. We used a decision tree approach which uses message features from the email content to derive svariables for email classification. We have also experimented with values for the parameters for the recursive partitioning function. The decision tree model quickly and with around 6% type I error classify ham and spam email. The complexity parameter is the best candidate parameter for tweaking in our model and can improve the results.
+
+## Future Work
+
+For future work we would like to explore additional machine learning algorithms such as random forests and compare the algorithms in order ti improve results and speed. Additionally, a grid search technique could be used to determing the optimal combination iof parameter values in an automated way.
+
+## References
+1.) D. Lang and D. Nolan, *Data Science in R: A Case Studies Approach to Computation Reasoning and Problem Solving.* New York, New York: CRC Press.
+    "Chapter 3: Using Statistics to Identify Spam"
+
+2.) M McCord and M Chuah, *Spam Detection on Twitter Using Traditional Classifiers*, Lehigh University
+    https://www.tdcommons.org/dpubs_series/759/
+    
+3.) Alex Jacobson and Tuna Toksoz, *Spam Detection For Outgoing And Incoming Calls*, Technical Disclosure Commons - Defensive Publications Series - Oct 16, 2017
+    https://www.tdcommons.org/cgi/viewcontent.cgi?article=1821&context=dpubs_series

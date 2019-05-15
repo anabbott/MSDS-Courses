@@ -1,0 +1,261 @@
+---
+title: "Unit 12 Branching Process Case Study"
+author: "Armand Post, Andrew Abbott, Mustafa Sakarwala"
+date: "March 24, 2018"
+output: 
+  word_document: default
+---
+
+<!-- NOTE: In Chapter 7 of “Data Science in R: A Case Studies Approach to Computational Reasoning and Problem Solving” by Nolan and Lang, a custom graph is created to visualize a family tree. The objective of this case study is to modify that custom graph as detailed in exercise 6 of the same chapter." -->
+
+## ABSTRACT
+This project aims to explore The Monte Carlo method, simulation, and random number generation with built-in probability distribution generators. Certain computer processing tasks lend themselves to parallel execution across multiple CPUs. In such cases, it is common for such processes to create additional jobs which require the completion of their parent tasks before they can start running. 
+
+Random branching processes can be simulated fairly easily using certain parameters. The first parameter, lambda, is the rate of process creation. The second parameter, kappa, is the rate of process completion. The lifecycle of a random process can be modeled using a Poisson distribution with these two rates. One potential issue with simulations of random branching processes is that they can spawn for an infinite number of generations. In order to combat this and produce a complete family tree, constraints can be put on several parameters. The simplest method is to set a hard cap on the number of generations. Another option is to limit the maximum running time of the entire branching process tree. For the purposes of this case study, we will use the first method.
+
+In Chapter 7 of "Data Science in R: A Case Studies Approach to Computational Reasoning and Problem Solving" by Nolan and Lang, a custom graph is created to visualize a family tree. The objective of this case study is to modify that custom graph as detailed in exercise 6 of the same chapter.
+
+## INTRODUCTION
+Our aim is to create an interactive visualization to aid in the exploratory process that accompanies the creation of a Monte Carlo simulation for this problem. It will provide a convenient user experience whereby the effect of changes to the input constraints can be easily and repeatedly visualized in a branched tree diagram showing the resulting process generations, including the lifetime cycles of related birth-death relationships between each parent and child. Each result will represent a singular instance, potentially one of thousands of repetitions making up a Monte Carlo simulation.
+The process being studied is a variant of a branching process. An example of this is the birth and assassination process. Given various input paramaters, lambda and kappa, the above process is simulated and the number of offspring and number of generations a particular family survives is determined.
+When analyzing a branching process it can be helpful to use graphical plots. Being able to visually inspect the aspects of a family tree can present insights into the data that may be otherwise overlooked. In Chapter 7 of “Data Science in R: A Case Studies Approach to Computational Reasoning and Problem Solving” by Nolan and Lang, a custom graph is created to visualize a family tree. The objective of this case study is to modify that custom graph as detailed in exercise 6 of the same chapter.
+
+## LITERATURE REVIEW
+For our literature review we searched for academic article on Monte Carlo and branch processing.  According to the text by Nolan and Lang, the process of Monte Carlo Simulation is "To study a random variable, we repeatedly generate independent random outcomes from its probability distribution, and we use the properties of these empirical results as approximations to their expected properties." While Monte Carlo Simulations are typically run on a CPU, Nvidia's Compute Unified Device Architecture (CUDA) allows calculations to be performed on a GPU. At the time of their writing, CUDA was available in C, although now it's supported across a variey of languages and platforms including Python, Anaconda, and Fortan. When applied to the ferromagnetic cubic lattice Ising model, the authors were able to acieve results up to 60 times faster than on a CPU from the equivalent period. This speed offers an interesting alternative to jobs optimized for a CPU if one can afford the additional hardware.
+
+In their paper on Perceptron Branch Predictors, Gao and Zhou prove that if you can measure correlation strengths accurately, you can improve performance of Perceptron predictors. This is achieved via "correlation-directed adaptation". They descirbe the process as "the strength of correlation is examined at a certain execution interval (or a program phase) and the inputs with weak correlation will be replaced with those potentially having stronger correlation." Gao and Zhou offered an interesting example of a different approach to branch processing than is explore in this case.
+
+## METHODS
+The steps for for modeling a branching process are as follow 
+1. Create a function that generates child processes given a parent process. We will denote birth time, completion time, rate for the inter-arrival of offspring, and a rate for the run times of the offspring with the parameters bTimes, cTimes, lambda, and kappa respectively.
+2. Model the entire process.
+3. Test the Model.
+3) Visualize the model.  
+
+## RESULTS
+
+The first step is is to create a function that generates child processes given a parent process. We will denote birth time, completion time, ID of the parent process, rate for the inter-arrival of offspring, and a rate for the run times of the offspring with the parameters bTimes, cTimes, parentID, lambda, and kappa respectively.
+```{r genKidsV, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+
+#Generates kids when passed vectors of birth times and completion times
+genKidsV = function(bTimes, cTimes, parentID, lambda = 0.5, kappa = 0.3) {
+       # Determine how many children each job has
+  parentAge = cTimes - bTimes
+  numKids = rpois(n = length(parentAge), lambda = lambda * parentAge)
+  
+  if (sum(numKids) == 0) return(NULL)
+  
+# Determine the birth times of the children  
+  kidStats = 
+    mapply(function(n, min, max) {
+      births = sort(runif(n, min, max))
+      runtimes = rexp(n, rate = kappa)
+      completes = rep(max, n) + runtimes
+      data.frame(births, completes)
+    },
+           n = numKids , min = bTimes, max = cTimes, 
+           SIMPLIFY = FALSE)
+  
+ 
+  return(data.frame(parentID = rep(parentID, numKids),
+                    kidID = 1:sum(numKids), 
+                    births = unlist(lapply(kidStats, "[[", "births")), 
+                    completes = unlist(lapply(kidStats,"[[", "completes"))
+                    ))
+}
+```
+
+The second step is to model the entire process for which we will use the genKidsV function we created in the first step. We will avoid an infinite loop by passing a parameter to set the maximum number of generations to be modeled.
+```{r familyTree, include=FALSE, echo=FALSE, eval=TRUE, warning=FALSE}
+#Creates a family tree with a max number of generations and offspring
+familyTree = function(lambda = 0.5, kappa = 0.3, maxGen = 10) {
+  # maxGen - maximum number of generations to observe
+  # Return value - a list with 1 data frame per generation.
+  allGens = vector(mode = "list", length = maxGen)
+  
+  # Generate the root of the tree
+  allGens[[1]] = data.frame(parentID = NA, kidID = 1, births = 0,
+                            completes = rexp(1, rate = kappa))
+  
+  # Generate future generations, one at a time.
+  for (i in 2:maxGen) {
+    nextGen = genKidsV(bTimes = allGens[[ (i - 1) ]]$births,
+                       cTimes = allGens[[ (i - 1) ]]$completes,
+                       parentID = allGens[[ (i - 1) ]]$kidID,
+                       lambda = lambda, kappa = kappa)
+    if (is.null(nextGen)) return(allGens[ 1:(i - 1) ])
+    allGens[[ i ]] = nextGen
+  }
+  
+  return(allGens)
+}
+```
+
+The next step is to test the model. We assign a seed value so that we can reproduce the results.
+```{r modelTest, include=TRUE, echo=FALSE, eval=TRUE, warning=FALSE}
+
+#testing family tree call
+seed1 = 12062013
+set.seed(seed1)
+tree = familyTree(lambda = 0.4, kappa = 1, maxGen = 10)
+print(tree)
+```
+
+### Alternative Visualization of a Family Tree Shown in Fig 7.4 of Data Science in R
+All the data generated by the familyTree function can be analyzed using by plotting it.
+
+```{r figure1, echo=FALSE, warning=FALSE}
+set.seed(seed1)
+g = familyTree(lambda = 0.4, kappa = 1, maxGen = 10)
+
+maxLife = max(sapply(g, function(gen) max(gen$completes)))
+numFamily = sum(sapply(g, nrow))
+
+plot(0,0, ylim = c(0.5, numFamily + 0.5), xlim = c(0, maxLife),
+     xlab = "Time", ylab = "", type ="n",
+     axes = FALSE)
+
+box()
+axis(1)
+numGen = length(g)
+numKids = sapply(g, nrow)
+treeN = g[ 2:(numGen + 1) ]
+birthNum = c(0, cumsum(sapply(g, nrow))[ -length(g)])
+axis(2, at = birthNum + 1, 
+     labels = paste("Gen", 1:numGen), tick = FALSE, las = 1)
+
+mapply(function(gen, nextGen, birthNum) {
+  birthOrder = birthNum + (1:nrow(gen))
+  segments(x0 = gen$births, x1 = gen$completes, y0 = birthOrder,
+          lwd = 3, col = "grey")
+  abline(h = 0.5 + max(birthOrder), lty = 2, col="black" )
+  if (all(!is.na(nextGen$births)))
+  points(x = nextGen$births, y = birthOrder[nextGen$parentID],
+         pch = 4)
+  },
+  gen = g, nextGen = treeN, birthNum = birthNum )
+```
+###### Figure 1 - Family Tree Graph  
+
+Figure 1 above plots the original custom graph from the Nolan and Lang book. The horizontal gray lines denote the lifetime of a process and the x's denote the birth of child processes.  
+
+As we can see in the original graph, it is difficult to identify which parent processes started which child processes. Knowing that type of information is valuable to improve the ability to analyse the process. We can observe in the chart above that the first child born in a generation produces significantly more child processed than other processes in its generation. It might be observed that the last child process born in a generation never spawns any further child processes. In order to make it clearly visible, we will customize the visualisation by adding some code that will have different color for each line according to parentID.  All processes that were spawned by the same parent process will be the same color. Since the first generation does not have a parent process, this line will remain gray. Also below we plot the same family tree in vertical format to provide a perhaps more intuitive representation of the process.
+
+```{r figure2, echo=FALSE, warning=FALSE}
+plot(0,0, ylim = c(0.5, numFamily + 0.5), xlim = c(0, maxLife),
+     xlab = "Time", ylab = "", type ="n",
+     axes = FALSE)
+
+box()
+axis(1)
+numGen = length(g)
+numKids = sapply(g, nrow)
+treeN = g[ 2:(numGen + 1) ]
+birthNum = c(0, cumsum(sapply(g, nrow))[ -length(g)])
+axis(2, at = birthNum + 1, 
+     labels = paste("Gen", 1:numGen), tick = FALSE, las = 1)
+
+mapply(function(gen, nextGen, birthNum) {
+  birthOrder = birthNum + (1:nrow(gen))
+  if (nrow(gen) == 1){
+    segments(x0 = gen$births, x1 = gen$completes, y0 = birthOrder,
+            lwd = 3, col = "grey")    
+  }
+  else {
+    segments(x0 = gen$births, x1 = gen$completes, y0 = birthOrder,
+            lwd = 3, col = birthOrder[gen$parentID])
+  }
+  abline(h = 0.5 + max(birthOrder), lty = 2, col="black" )
+  if (all(!is.na(nextGen$births)))
+  points(x = nextGen$births, y = birthOrder[nextGen$parentID],
+         pch = 4)
+  },
+  gen = g, nextGen = treeN, birthNum = birthNum )
+```
+###### Figure 2 - Family tree graph color coded by Parent ID
+
+As we see in Figure 2 above, every process within a generation is color-coded by its parent process ID.  Specially looking at generation 4 we are now able to clearly identify that two processes were spawned at nearly the same time. Now it is apparent that the first process in generation 4 was spawned by the second process in generation 3 while the second and third processes in generation 4 were spawned by the third process in generation 3.
+
+```{r figure3, echo=FALSE, warning=FALSE, message=FALSE}
+draw_tree <- function(lambda = .4, kappa = 1, maxGen = 10, seedx=12062013){
+  library(dplyr)
+  library(ggplot2)
+  #lambda = .4; kappa = 1; maxGen = 10; seedx=12062013
+  set.seed(seedx); tree <- familyTree(lambda=lambda, kappa = kappa, maxGen = maxGen)
+  
+  tree_df <- data.frame()
+  for (i in 1:length(tree)){
+    # convert gen i to data frame
+    tmp <- as.data.frame(tree[i])
+    # lable gen i
+    tmp$Gen <- i
+    tree_df <- rbind(tree_df, tmp)
+  }
+  
+  # Add y cord
+  #tree_df$x_cord <- 1:nrow(tree_df)*.5
+  tree_df$x_cord <- c(0.0, -1.0, .5, -.5, -1.5, 1.5, -2.0, 1.0, 2.0)
+  
+  # Add parent generation reference
+  tree_df$Parent_Gen <- tree_df$Gen-1
+  
+  # Self join the table to identify the births on the parent
+  marks <- inner_join(select(tree_df, kidID, Gen, x_cord), 
+                      select(tree_df, parentID, Parent_Gen, births), 
+                      by=c("kidID" = "parentID", "Gen"="Parent_Gen"))
+  
+  # Connect birth to life line
+  conn_lines <- inner_join(select(tree_df, births, x_cord, Gen),
+                           select(marks, births, x_cord), by="births")
+  
+  # Generation separation locations
+  gen_lines <- tree_df %>% 
+    group_by(Gen) %>% 
+    summarize(Gen_Break = max(x_cord)+.25) %>%
+    mutate(Gen_Label = paste("Gen", Gen))
+  
+  g <- ggplot(tree_df) + 
+    geom_segment(aes(y = -births, x = x_cord, yend = -completes, xend = x_cord, color=as.factor(Gen-1)), size=1.25) +
+    geom_segment(aes(y = -births, x = x_cord.x, yend = -births, xend = x_cord.y, color=as.factor(Gen-1)), data = conn_lines,  size=1.25) +
+    geom_point(aes(y = -births, x = x_cord), data = marks, shape=19, size=3, color="#007F00") +
+    scale_color_discrete(name="Generation")+ 
+    theme_bw() + 
+    labs(title = "Fig. 3") +
+    theme(axis.title.y=element_blank(),
+          axis.title.x=element_blank(),
+          panel.grid.major.y = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.x = element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank(),
+          axis.text.y=element_blank(),
+          axis.ticks.y=element_blank()) 
+  
+  return(g)
+}
+
+draw_tree()
+```
+###### Figure 3 - Family tree graph color coded by Parent ID in vertical tree format
+
+Figure 3 is an alternate visualization representing a complete cycle in a vertical tree format with several improvements not yet implemented in a Shiny App. It better maintains the visual relationship between parent and child process by grouping them together. Unfortunately, however, the algorithm required to determine the branch spacing is complicated to calculate dynamically. As such, this was not able to be implemented in a similar Shiny App. It remains future work to overcome that challenge.
+
+## Conclusions and Future Work
+The use of simulation, especially Monte Carlo simulation, has been increasing in recent years. Many models that are visible to the general public include at some level a Monte Carlo simulation. These include election results modeling, as well as the outcomes major sporting events. Fivethirtyeight.com's models for both elections and for results of sports leagues include Monte Carlo simulations. The method has also been mentioned in the context of quantative finance, genetics and many other fields.
+
+Graphical representation, charts, and visualizations improve the ability to analyze any type of process. It greatly improves ability to analyse in this type of random branching process. The original custom graph from the Nolan and Lang book goes a long way in enhancing the ability to examine the data produced by the familyTree function. However, it is difficult to distinguish which child processes were spawned by which parent processes. We can see in the modified version of the graph that colorizing a visualization can provide further insight into the data. In this specific example, the added color allows the reader to easily distinguish which child processes were spawned by which parent processes.
+
+To improve on the current case study ,different formats such as a traditional dendrogram might reveal even more information that can’t be seen in the current graph format. The graph in this case study is useful for looking at a single family tree, but futher analysis might entail creating hundreds or thousands of family trees that would require a more aggregate analysis. More colors could be added to the charts by using advanced library like plotly to improve visualization and ability to analyse.
+
+## References
+
+1.) D. Lang and D. Nolan, *Data Science in R: A Case Studies Approach to Computation Reasoning and Problem Solving.* New York, New York: CRC Press.
+    "Chapter 7: Simulation Study of Branch Processing"
+
+2.) H Gao and H Zhou, *Adaptive Information Processing: An Effective Way to Improve Perceptron Branch Predictors*, University of Central Florida
+    https://www.jilp.org/vol7/v7paper6.pdf
+    
+3.) T Preis, P Virnau, W Paul, J Schneider, *GPU accelerated Monte Carlo simulation of the 2D and 3D Ising model*, Journal of Computational Physics - Mar 2009
+    http://tobiaspreis.de/publications/pvps_jcp_2009.pdf
+    
