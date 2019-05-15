@@ -1,0 +1,125 @@
+PShape gear, rack;
+PFont font;
+float angle = TWO_PI/360;
+float dx, targetX, dxHook, hookX, hookY, targetHookX, theta, rotation =0;
+float displayVal;
+import org.gicentre.utils.stat.*;
+BarChart barChart;
+
+PVector bar ;
+PVector screenPoint;
+float globalGDP[] = new float[12];
+
+int screenWidth, screenHeight;
+
+
+
+void setup() {
+  screenPoint = new PVector(mouseX, mouseY);
+  font = createFont("Arial", 32);
+  shapeMode(CENTER);
+  size(1500, 800);
+  surface.setResizable(true);
+  screenWidth = width;
+  screenHeight = height;
+  smooth();
+  gear = loadShape("Gear24T24mmDia.svg");
+  rack = loadShape("Rack24Tbeam.svg");
+  for (int i=0; i<25; i ++) {
+    //  println("y= ", "25", "x= ", i, atan2(25, i));
+  }
+  barchart1();//initialize the barchart
+}
+
+
+
+void draw() {
+  screenPoint = new PVector(mouseX, mouseY);
+
+  bar = barChart.getScreenToData(screenPoint);
+  if (bar != null) {
+//    print(bar); // see what it is pointing at in the console window
+  }
+  background(255);
+  textFont(createFont("Serif", 40), 40);
+  barChart.draw(150, 300, width-200, height-350); 
+
+
+
+  dx = (mouseX -targetX) * 0.9; 
+  targetX = mouseX - dx;
+  dxHook = dx * 1.25; 
+  targetHookX = mouseX - dxHook;
+  theta = atan2(250, abs((targetX-targetHookX)-width/2))-PI/2;
+  hookY =  -250* sin(theta);
+  hookX = -targetHookX* cos(theta);
+
+  fill(0, 0, 0);
+  textFont(font);
+  textSize(26);
+  // debugging code to get mouse position if needed
+//  text(mouseX, 10, height-20 );
+//  text(mouseY, 100, height-20);
+//  text(theta, 300, height-20);
+  if (bar != null) {
+    displayVal = globalGDP[(int(bar.x))];
+    text(displayVal, targetHookX, .08*height/2+hookY +30);
+  }
+  //text(rotation, 200, height-20);
+
+  // 23 teeth per 256 linear pixels on rack, TWO_PI radians per 24 teeth on gear 
+  rotation = (targetX*23.0/256.0)*(TWO_PI/24.0);
+  // shift rack 3 pixels to align teeth, 53 pixel center to center vertical distance
+  shape(rack, width/2+3, .08*height/2+53);
+
+  pushMatrix();
+
+  //rect(targetX, .08*height/2, targetHookX, .08*height/2+hookY);
+  translate(targetX, .08*height/2);
+  rotate(rotation);
+  shape(gear, 0, 0);
+  popMatrix();
+  strokeWeight(10);
+  line(targetX, .08*height/2, targetHookX, .08*height/2+hookY);
+  line(targetHookX - 20, .08*height/2+hookY -20, targetHookX, .08*height/2+hookY);
+  line(targetHookX + 20, .08*height/2+hookY -20, targetHookX, .08*height/2+hookY);
+  // Draw a title over the top of the chart.
+  fill(120);
+  textSize(20);
+  text("\nGDP per capita ", 30, 200);
+  textSize(11);
+  text("(inflation adjusted $US)", 
+    45, 242);
+}
+
+
+void barchart1() {
+  barChart = new BarChart(this);
+  // Load in data from a file 
+  String[] data = loadStrings("USAGDP.csv");
+  String[] year = new String[data.length-1];
+  float[] GDP = new float[data.length-1];
+  for (int i=0; i<data.length-1; i++)
+  {
+    String[] tokens = data[i+1].split(",");
+    year[i] = tokens[0]; 
+    GDP[i] = Float.parseFloat(tokens[1]);
+    globalGDP[i] = GDP[i];
+  }
+
+  barChart.setData(GDP);
+
+  // Axis appearance
+  textFont(createFont("Serif", 10), 10);
+  barChart.showValueAxis(true);
+  barChart.setValueFormat("$###,###");
+  barChart.setBarLabels(year);
+  barChart.showCategoryAxis(true);
+
+  // Bar colours and appearance
+  barChart.setBarColour(color(200, 80, 80, 150));
+  barChart.setBarGap(4);
+
+  // Bar layout
+  barChart.transposeAxes(false);
+}
